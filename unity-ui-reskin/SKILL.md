@@ -1,6 +1,6 @@
 ---
 name: unity-ui-reskin
-description: Unity 项目通用的界面替换 / 换皮 / 美术替换 / 按效果图（PSD、PSB、Figma、PNG）1:1 还原 UI，以及美术换皮后的审查与修复。零配置，任何 Unity 工程直接可用（自动探测工程、资源子模块、本地化文字组件、字体目录，编辑器工具自动装成嵌入式包）。凡是「美术给了新切图或效果图，替换 / 对齐某界面、叠图测量位置字号描边、多分辨率适配」，或「美术换皮了 / 某 tag 或提交之后美术改了 UI，审查并直接修复换皮问题」都用本 skill（默认程序直接改，不出待办清单）——即使用户没说"换皮"二字。项目自带同类 skill 或换皮规范（如 ui-reskin / ui-reskin-review）时优先用项目的，本 skill 作工具补充。不用于纯代码 diff 审查或从零设计新界面。
+description: Unity 项目通用的界面替换 / 换皮 / 美术替换 / 按效果图（PSD、PSB、Figma、PNG）1:1 还原 UI、根据效果图新建界面（生成骨架 prefab、自动推断并建好按钮 / 进度条 / 开关 / 滚动列表等 UGUI 控件、照项目框架写业务代码、配置图集与资源管理），以及美术换皮后的审查与修复。零配置，任何 Unity 工程直接可用（自动探测工程、资源子模块、本地化文字组件、字体目录，编辑器工具自动装成嵌入式包）。凡是「美术给了新切图或效果图，替换 / 对齐某界面、叠图测量位置字号描边、多分辨率适配」，「按 PSD / 效果图新做一个界面、把设计稿做成可用功能」，或「美术换皮了 / 某 tag 或提交之后美术改了 UI，审查并直接修复换皮问题」都用本 skill（默认程序直接改，不出待办清单）——即使用户没说"换皮"二字。项目自带同类 skill 或换皮规范（如 ui-reskin / ui-reskin-review）时优先用项目的，本 skill 作工具补充。不用于纯代码 diff 审查，或没有效果图时从零设计界面的视觉方案。
 ---
 
 # Unity 界面替换与换皮审查（代理端通用版）
@@ -20,6 +20,7 @@ description: Unity 项目通用的界面替换 / 换皮 / 美术替换 / 按效�
 | 任务 | 读 |
 |---|---|
 | 按效果图替换 / 还原界面 | `references/reskin.md`（流程、工具链、项目画面与坐标、坑速查、PSD 复盘、换算） |
+| 按效果图新建界面（到功能可用） | `references/new-ui.md`（摸清项目框架 → PSD 解析 → 骨架与 UGUI 控件 → 对齐项目约定 → 业务代码 → 图集 / 资源配置 → 验证）。工具做确定性的部分，业务代码照项目里最相近的界面写，推断不出的业务语义列「待确认」 |
 | 美术换皮后审查并修复 | `references/review.md`（原则、静态 19 项清单、运行时审查、文档结构、修复规范）+ `references/review-tools.md`。**默认直接修**：问题由程序改完、测试、提交，文档写修改记录并告知美术；只有新功能 / 玩法数值 / 交互方式这类产品决策才问用户，用户说「只评估」才不改 |
 | 给美术提效果图交付要求 | `references/art-delivery.md` |
 | 工具选型背景 | `references/research.md` |
@@ -50,7 +51,7 @@ description: Unity 项目通用的界面替换 / 换皮 / 美术替换 / 按效�
 
 ## 目录
 
-- `scripts/`：`uir_project.py`（零配置探测）、`install_unity_package.sh`、`setup.sh`、`crop_effect.py`、`psd_to_spec.py`、`figma_to_spec.py`、`diff.py`、`align_nodes.py`、`measure.py`、`overlay.py`、`matrix.py`、`contact_sheet.py`、`export_snapshot.py`、`prefab_audit.py`、`reskin_common.py`、`ocr.swift`
-- `unity-package/com.agent.uireskin/`：编辑器工具（命名空间 `UIReskin`：`ReskinConfig` 自动探测、`ReskinHealth` 体检、`ReskinProbe` / `ReskinMatrix` 运行时导出与截图、`ReskinApply` 位置修正、`ReskinTextStyle` / `ReskinMaterialStyle` 文字样式材质、`ReskinOverlay` 叠图、`ReskinAnim` 动画快进；菜单 Tools/UIReskin）
+- `scripts/`：`uir_project.py`（零配置探测）、`spec_to_layout.py`（PSD 数据 → 骨架布局 + 控件推断 + bindings.json）、`install_unity_package.sh`、`setup.sh`、`crop_effect.py`、`psd_to_spec.py`、`figma_to_spec.py`、`diff.py`、`align_nodes.py`、`measure.py`、`overlay.py`、`matrix.py`、`contact_sheet.py`、`export_snapshot.py`、`prefab_audit.py`、`reskin_common.py`、`ocr.swift`
+- `unity-package/com.agent.uireskin/`：编辑器工具（命名空间 `UIReskin`：`ReskinBuild` 生成骨架 prefab 与 UGUI 控件、`ReskinAssets` 切图导入 / 图集 / 资源管理登记、`ReskinSurvey` UI 框架普查、`ReskinConfig` 自动探测、`ReskinHealth` 体检、`ReskinProbe` / `ReskinMatrix` 运行时导出与截图、`ReskinApply` 位置修正、`ReskinTextStyle` / `ReskinMaterialStyle` 文字样式材质、`ReskinOverlay` 叠图、`ReskinAnim` 动画快进；菜单 Tools/UIReskin）
 - `snippets/reskin/`、`snippets/review/`：`execute_code` 一次性片段
 - `examples/`：样式 JSON 示例；`examples/FoodFlow1/` 是框架专用的开界面写法参考（`examples/BubbleWord3/` 若存在，是本机保留的项目原版，不随公开仓库分发）

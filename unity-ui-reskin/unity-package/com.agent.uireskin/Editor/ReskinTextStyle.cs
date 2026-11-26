@@ -131,7 +131,8 @@ namespace UIReskin
                     var lang = ReskinConfig.LangOfFont(t.font != null ? t.font.name : null, ReskinConfig.Data.reportLang);
                     var cur = t.fontSharedMaterial != null ? t.fontSharedMaterial.name : "";
                     var srcSuffix = ReskinConfig.StyleOfMaterial(cur);
-                    if (string.IsNullOrEmpty(srcSuffix))
+                    bool needMat = Langs.Length > 0 && s.outline != null && s.outline.color != null && s.outline.px > 0;
+                    if (needMat && string.IsNullOrEmpty(srcSuffix))
                     {
                         srcSuffix = ReskinConfig.Data.fallbackSourceStyle;
                         sb.AppendLine($"  ⚠ {s.path} 当前材质 '{cur}' 不符合 materialPattern，克隆源改用 fallbackSourceStyle '{srcSuffix}'（dry-run 若报 MISSING 请改用 ReskinMaterialStyle）");

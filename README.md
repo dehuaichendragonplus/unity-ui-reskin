@@ -1,6 +1,6 @@
 # unity-ui-reskin（代理端界面替换 / 换皮审查工具包）
 
-把 BubbleWord3（源自 FoodFlow1）沉淀的「按效果图 1:1 还原界面」与「美术换皮审查」两套 skill + 工具，做成 **Claude Code 用户级 skill**：装一次，任何 Unity 项目直接可用，**项目里不需要任何配置文件**。
+把 BubbleWord3（源自 FoodFlow1）沉淀的「按效果图 1:1 还原界面」与「美术换皮审查」两套 skill + 工具，再加上「按 PSD 新建界面到功能可用」，做成 **Claude Code 用户级 skill**：装一次，任何 Unity 项目直接可用，**项目里不需要任何配置文件**。
 
 ## 安装
 
@@ -11,6 +11,7 @@ bash install.sh --python   # 可选：同时建 Python 图像环境（首次用�
 
 装完新开一个 Claude Code 会话，直接说需求即可触发，例如：
 - 「美术给了新切图和 PSD，按效果图把商店界面还原一下」
+- 「按这份 PSD 新做一个签到界面，接好功能」（生成骨架与控件 → 照项目框架写代码 → 配图集与资源 → 打开验证）
 - 「美术在 v1.2.0 之后换皮了，审查并直接修好」（默认程序直接改 prefab、字体、代码，测试后提交，最后出修改记录告知美术）
 
 ## 零配置是怎么做到的
@@ -27,6 +28,20 @@ bash install.sh --python   # 可选：同时建 Python 图像环境（首次用�
 | 效果图手机画面 | `crop_effect.py auto` 自动去纯色边框；整屏设计时提示代理目视后传坐标 |
 
 探测结果缓存在 `Library/UIReskin/detected.json`（不进版本库）。确实探测错了才需要写 `ProjectSettings/UIReskinConfig.json` 覆盖个别字段。每个项目确认过的画面裁切、参考分辨率、开界面方式等，由代理写进该项目的记忆，下次直接用。
+
+## 新建界面能自动做到哪
+
+| 环节 | 自动程度 | 说明 |
+|---|---|---|
+| PSD → 骨架 prefab | 全自动 | 层级、RectTransform、锚点（第一层按画面位置推断）、图片、文字（字号 / 颜色 / 字距 / 渐变）、隐藏状态组 |
+| UGUI 控件 | 全自动 + 复核 | 按名字和结构推断：按钮（底图 + 文字）、关闭键（面板右上角小方块）、进度条（底 + 填充长条，转 Slider）、开关、滚动列表（重复结构 → ScrollRect + LayoutGroup）；形状推断的会标出来请代理复核 |
+| 按钮功能 | 推断建议 | 按按钮文字推断（Free → 看广告、价格 → 购买、Claim → 领取、Activate → 激活……），写进 `bindings.json` |
+| 切图 | 全自动 | 工程同名 Sprite 优先；否则导入图层 PNG（同内容去重、导入设置照抄邻居） |
+| 图集 / 资源管理 | 全自动（预演后写入） | 图集按工程现有设置新建或补图；Addressables / YooAsset 照抄最近的组 / 收集器登记；Resources 直接可用 |
+| 业务代码 | 代理照项目写 | `ReskinSurvey` 普查出项目的界面基类、绑定方式、打开接口；代理照最相近的界面写，推断不出的数据来源 / 配置 id / 价格列「待确认」，不编造 |
+| 对齐与验证 | 全自动测量 | 生成后直接走还原流程：运行时测量 → 差异 → 自动修正；真实点击验证按钮 |
+
+实测（2026-11-26，Unity 6000.3 全新工程，零配置）：战令界面 PSD（278 个图层）→ 108 个节点的 prefab，1.1 秒生成，导入 57 张切图（10 张内容相同自动复用）、6 个按钮、1 个进度条；默认图层名的结算界面按结构识别出 Free / 900 两个按钮；合成列表界面生成的 ScrollRect 间距、边距与 PSD 一致，关闭键 / 进度条 / 开关实例化后位置与 PSD 坐标逐像素一致。BubbleWord3 上 `ReskinSurvey` 找出 `DragonCD3.UI.View`（95 个界面）、`[Binding("Root/...")]` 绑定、`UISystem.ShowView<T>` 打开接口。
 
 ## 用到的技术
 
@@ -46,6 +61,9 @@ bash install.sh --python   # 可选：同时建 Python 图像环境（首次用�
 | 写回 prefab | `PrefabUtility.LoadPrefabContents` / `SaveAsPrefabAsset`、`SerializedObject`、SpriteAtlas API、2D Sprite 数据提供器 | 只改数值不改结构；体检切片越界、引用丢失等「无报错坑」 |
 | 编辑器叠图 | `EditorApplication.update` 驱动的叠加画布（Alpha / 边缘线）+ 跟随锚点的辅助线 | Play 中实时对齐，换分辨率辅助线跟着锚点走 |
 | 换皮审查 | git 区间 diff + `git show` 导出旧版快照、prefab YAML 解析（fileID / guid）、全工程 guid 索引 | 不开 Unity 就能报出断引用、旧版 Text、字体改动、规范字体违规，只报本轮新引入的 |
+| 新建界面 | 图层树 → 节点树、按名字 + 几何结构推断控件（底图包文字、右上角小方块、共左边长条、重复子结构）、UGUI 控件组装（Slider / Toggle / ScrollRect + RectMask2D + LayoutGroup）、文件内容哈希去重 | 从 PSD 直接生成可交互的骨架 prefab 与控件 |
+| 资源接线 | SpriteAtlas V1 / V2（`SpriteAtlasAsset`、`SpriteAtlasImporter`）、Addressables / YooAsset 反射调用、TextureImporter 设置照抄 | 不依赖这些包也能编译；按工程现有约定登记 |
+| 框架普查 | 反射扫描项目程序集：界面基类分布、字段 / 类特性、带泛型约束的打开 / 关闭方法排序 | 给代理写业务代码当依据，照项目已有写法而不是通用模板 |
 
 ## 效率对比（与传统手工方式）
 
@@ -93,12 +111,13 @@ bash install.sh --python   # 可选：同时建 Python 图像环境（首次用�
 unity-ui-reskin/                 ← 整个目录就是 skill
   SKILL.md                       入口：识别项目 → 按任务读规范 → 铁律 / 易错点
   references/
+    new-ui.md                    新建界面全流程（PSD → 骨架 / 控件 → 业务代码 → 图集 / 资源 → 验证）
     reskin.md                    界面替换规范（流程、工具链、项目画面与坐标、坑速查、PSD 复盘、换算）
     review.md                    换皮审查规范（原则、静态 19 项清单、运行时审查、文档结构、修复、提交、收尾）
     review-tools.md              审查工具说明
     art-delivery.md              给美术的效果图交付规范
     research.md                  工具选型调研（FoodFlow1）
-  scripts/                       Python / Shell（uir_project.py 零配置探测、install_unity_package.sh、crop_effect、psd_to_spec、diff、align_nodes、export_snapshot、prefab_audit ……）
+  scripts/                       Python / Shell（uir_project.py 零配置探测、spec_to_layout.py 骨架 + 控件推断、install_unity_package.sh、crop_effect、psd_to_spec、diff、align_nodes、export_snapshot、prefab_audit ……）
   unity-package/com.agent.uireskin/   编辑器工具（命名空间 UIReskin，菜单 Tools/UIReskin）
   snippets/reskin|review/        execute_code 一次性片段
   examples/                      样式 JSON 示例；FoodFlow1 开界面写法（项目特化参考）
