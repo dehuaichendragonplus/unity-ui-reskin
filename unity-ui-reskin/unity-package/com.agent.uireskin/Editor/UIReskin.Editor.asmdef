@@ -1,0 +1,26 @@
+{
+    "name": "UIReskin.Editor",
+    "rootNamespace": "UIReskin",
+    "references": [
+        "Unity.TextMeshPro",
+        "Unity.ugui",
+        "Unity.2D.Sprite.Editor"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [
+        "UIRESKIN_TMP"
+    ],
+    "versionDefines": [
+        { "name": "com.unity.textmeshpro", "expression": "1.0.0", "define": "UIRESKIN_TMP" },
+        { "name": "com.unity.ugui", "expression": "2.0.0", "define": "UIRESKIN_TMP" },
+        { "name": "com.unity.2d.sprite", "expression": "1.0.0", "define": "UIRESKIN_SPRITE_EDITOR" }
+    ],
+    "noEngineReferences": false
+}

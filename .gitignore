@@ -1,0 +1,5 @@
+# 公司项目内部原版文档，只留本机，不进公开仓库
+unity-ui-reskin/examples/BubbleWord3/
+__pycache__/
+*.pyc
+.DS_Store

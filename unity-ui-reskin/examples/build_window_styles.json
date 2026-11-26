@@ -1,0 +1,42 @@
+{
+  "materials": [
+    {
+      "name": "Name White 31",
+      "source": "Shadow Blue",
+      "color": [
+        57,
+        41,
+        100
+      ],
+      "fontPx": 30.7,
+      "px": 2,
+      "offsetDown": 0
+    },
+    {
+      "name": "Desc Plain 31",
+      "source": "Shadow Blue",
+      "color": [
+        15,
+        60,
+        127
+      ],
+      "fontPx": 30.7,
+      "px": 0,
+      "offsetDown": 0
+    }
+  ],
+  "nodes": [
+    {
+      "prefab": "Assets/Res/FishPool/Prefabs/UI/Fish/UIFishPoolTask.prefab",
+      "path": "Root/MiddleGroup/ItemMystery/Text",
+      "material": "Name White 31",
+      "fontSizeMax": 30.7
+    },
+    {
+      "prefab": "Assets/Res/FishPool/Prefabs/UI/Fish/UIFishPoolTask.prefab",
+      "path": "Root/CommonGroup/DescText",
+      "material": "Desc Plain 31",
+      "fontSizeMax": 30.7
+    }
+  ]
+}

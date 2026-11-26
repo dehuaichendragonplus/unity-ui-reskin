@@ -1,0 +1,8 @@
+{
+  "name": "com.agent.uireskin",
+  "version": "1.0.0",
+  "displayName": "UIReskin (Agent)",
+  "description": "代理端界面替换 / 换皮审查工具：运行时测量、效果图差异修正、文字样式材质、体检、多分辨率截图。由 unity-ui-reskin skill 自动安装为嵌入式包，删除本目录即卸载。",
+  "unity": "2022.3",
+  "keywords": ["ui", "reskin", "agent"]
+}
