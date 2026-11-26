@@ -174,7 +174,8 @@ FACTS_DIR = ".uireskin"
 FACTS_TEMPLATE = {
     "schema": 1,
     "updated": "",
-    "_说明": "UIReskin 项目事实：只写核实过的结论；证据、来源与待核实项写在同目录 facts.md。空字符串 / 空数组 = 未调研，工具会提示先调研。",
+    "_说明": "UIReskin 项目事实：只写核实过的结论；证据、来源与待核实项写在同目录 facts.md。空字符串 / 空数组 = 未调研，工具会提示先调研；核实过「本项目没有」的段 / 字段写进 _notApplicable，不再提示。",
+    "_notApplicable": [],
     "unity": {"project": "", "assetRepo": ""},
     "ui": {"refWidth": 0, "refHeight": 0, "match": "", "prefabDir": "", "spriteDir": "", "effectFrames": {}, "defaultFrame": ""},
     "text": {"defaultFont": "", "locTextType": "", "locMaterialField": "", "locMaterialPrefix": "", "locTermField": "",
@@ -249,14 +250,17 @@ def fact(facts, dotted, default=None):
     return default if cur in ("", [], {}, 0, None) else cur
 
 
-def empty_fields(d, prefix=""):
+def empty_fields(d, prefix="", skip=None):
+    skip = skip if skip is not None else set(d.get("_notApplicable") or [])
     out = []
     for k, v in d.items():
         if k.startswith("_") or k in ("schema", "updated"):
             continue
         key = f"{prefix}{k}"
+        if key in skip:
+            continue
         if isinstance(v, dict) and v and k != "effectFrames":
-            out += empty_fields(v, key + ".")
+            out += empty_fields(v, key + ".", skip)
         elif v in ("", [], {}, 0, None):
             out.append(key)
     return out

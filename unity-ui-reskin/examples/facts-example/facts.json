@@ -2,33 +2,91 @@
   "schema": 1,
   "updated": "2026-11-26",
   "_说明": "虚构项目 SampleGame 的项目事实示例（字段含义见同目录 facts.md）。真实项目放在仓库根 .uireskin/facts.json，只写核实过的结论。",
-  "unity": { "project": "Client", "assetRepo": "ArtRes" },
+  "_notApplicable": [
+    "localization.idField",
+    "framework.bindingComponentMember"
+  ],
+  "unity": {
+    "project": "Client",
+    "assetRepo": "ArtRes"
+  },
   "ui": {
-    "refWidth": 750, "refHeight": 1334, "match": "width",
-    "prefabDir": "Assets/Bundles/UI/Prefabs", "spriteDir": "Assets/Bundles/UI/Textures",
-    "effectFrames": { "phone": [0, 0, 750, 1334], "padded": [225, 0, 975, 1334] },
+    "refWidth": 750,
+    "refHeight": 1334,
+    "match": "width",
+    "prefabDir": "Assets/Bundles/UI/Prefabs",
+    "spriteDir": "Assets/Bundles/UI/Textures",
+    "effectFrames": {
+      "phone": [
+        0,
+        0,
+        750,
+        1334
+      ],
+      "padded": [
+        225,
+        0,
+        975,
+        1334
+      ]
+    },
     "defaultFrame": "phone"
   },
   "text": {
     "defaultFont": "Main SDF",
-    "locTextType": "LocText", "locMaterialField": "styleName", "locMaterialPrefix": "", "locTermField": "key",
-    "fontRoot": "Assets/Bundles/Fonts/", "fontAssetPattern": "Main_{lang} SDF", "materialPattern": "Main_{lang} SDF {style}",
-    "defaultMaterialStyle": "Material", "fallbackSourceStyle": "Outline", "defaultCloneSource": "Shadow", "reportLang": "en",
-    "outlineCalibration": 1.2, "healthFieldMatchesMaterial": true, "afterMaterialsHook": "SampleGame.EditorTools.FontStyleTable.Rebuild"
+    "locTextType": "LocText",
+    "locMaterialField": "styleName",
+    "locMaterialPrefix": "",
+    "locTermField": "key",
+    "fontRoot": "Assets/Bundles/Fonts/",
+    "fontAssetPattern": "Main_{lang} SDF",
+    "materialPattern": "Main_{lang} SDF {style}",
+    "defaultMaterialStyle": "Material",
+    "fallbackSourceStyle": "Outline",
+    "defaultCloneSource": "Shadow",
+    "reportLang": "en",
+    "outlineCalibration": 1.2,
+    "healthFieldMatchesMaterial": true,
+    "afterMaterialsHook": "SampleGame.EditorTools.FontStyleTable.Rebuild"
   },
   "localization": {
-    "component": "LocText", "idField": "", "keyField": "key",
-    "requiredFonts": ["Main SDF", "Title SDF"], "titleFont": "Title SDF",
-    "materialMap": [ { "from": "Shadow", "to": "Main SDF Shadow" }, { "from": "Outline", "to": "Main SDF Outline" } ],
-    "forbidUnder": ["/Battle/"],
+    "component": "LocText",
+    "idField": "",
+    "keyField": "key",
+    "requiredFonts": [
+      "Main SDF",
+      "Title SDF"
+    ],
+    "titleFont": "Title SDF",
+    "materialMap": [
+      {
+        "from": "Shadow",
+        "to": "Main SDF Shadow"
+      },
+      {
+        "from": "Outline",
+        "to": "Main SDF Outline"
+      }
+    ],
+    "forbidUnder": [
+      "/Battle/"
+    ],
     "fixPolicy": "字体问题由程序直接修，修完告知美术"
   },
   "framework": {
     "viewBase": "SampleGame.UI.WindowBase",
-    "bindingAttribute": "SampleGame.UI.UINodeAttribute", "bindingPathMember": "ctor:0", "bindingOptionalMember": "Optional", "bindingComponentMember": "",
-    "descriptorAttribute": "SampleGame.UI.WindowAttribute", "descriptorKeyMember": "PrefabPath",
-    "open": "UIManager.Instance.Open<T>()", "close": "UIManager.Instance.Close<T>()",
+    "bindingAttribute": "SampleGame.UI.UINodeAttribute",
+    "bindingPathMember": "ctor:0",
+    "bindingOptionalMember": "Optional",
+    "bindingComponentMember": "",
+    "descriptorAttribute": "SampleGame.UI.WindowAttribute",
+    "descriptorKeyMember": "PrefabPath",
+    "open": "UIManager.Instance.Open<T>()",
+    "close": "UIManager.Instance.Close<T>()",
     "register": "类上标 [Window(\"UI/xxx\")]，并在 WindowLayer 枚举里登记层级",
-    "referenceViews": ["SampleGame.UI.DailyRewardWindow", "SampleGame.UI.ShopWindow"]
+    "referenceViews": [
+      "SampleGame.UI.DailyRewardWindow",
+      "SampleGame.UI.ShopWindow"
+    ]
   }
 }

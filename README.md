@@ -20,7 +20,7 @@ bash install.sh --python   # 可选：同时建 Python 图像环境（首次用�
 
 1. **读项目事实**：仓库根 `.uireskin/facts.json`（工具读）+ `.uireskin/facts.md`（人看：结论、证据、待核实、变更记录）。用到的字段有值就直接用。
 2. **缺什么调研什么**：工具只给候选、不下结论——`uir_project.py info`（本地化组件类、TMP 字体引用排行、CanvasScaler 参考分辨率）、`ReskinConfig.Dump()`（文字 / 字体，逐字段标「事实 / 探测，待核实」）、`ReskinSurvey.Run()`（界面基类、绑定特性、打开 / 关闭接口）、`ReskinAssets.Survey()`（资源管理与图集）。代理读源码、实测核实。
-3. **写回仓库**：核实的结论写进 facts.json，证据写进 facts.md，随本次工作一起提交；下次（换人、换会话）直接读，不再重新摸。
+3. **写回仓库**：核实的结论写进 facts.json，证据写进 facts.md，随本次工作一起提交；下次（换人、换会话）直接读，不再重新摸。核实过「不适用」的字段列进 `_notApplicable`，不再提示。
 4. **缺事实时不瞎猜**：审查片段、prefab_audit 等读不到事实会明确提示「先调研哪个字段」，不会套用别的项目的组件名 / 字体名。
 
 | facts.json 段 | 内容 | 谁在用 |

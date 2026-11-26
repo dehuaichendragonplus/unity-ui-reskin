@@ -13,7 +13,7 @@ description: Unity 项目通用的界面替换 / 换皮 / 美术替换 / 按效�
 2. **项目事实** = 仓库根 `.uireskin/facts.json`（工具读）+ `.uireskin/facts.md`（人看：结论、证据、待核实、变更记录）。`uir_project.py facts show` 看已有事实与空字段；没有就 `facts init` 建模板。字段说明见 `examples/facts-example/`。
    - 本次任务**用到的字段先读事实**；事实里有就直接用，不重新摸。
    - 用到的字段为空 → **调研**：`uir_project.py info`（候选）、`execute_code` 里 `UIReskin.ReskinConfig.Dump()`（文字 / 字体探测，标「事实 / 探测，待核实」）、`UIReskin.ReskinSurvey.Run()`（界面基类、绑定特性、打开 / 关闭接口）、`UIReskin.ReskinAssets.Survey()`（资源管理与图集）。这些只给**候选**，要读源码 / 实测核实。
-   - **核实后写回**：facts.json 填字段，facts.md 写结论 + 证据（类名、文件路径、实测结果）；没把握的写进「待核实」，不写进 json。推翻旧事实时在「变更记录」写一行原因。事实文件随本次工作按项目的提交规范一起提交。
+   - **核实后写回**：facts.json 填字段，facts.md 写结论 + 证据（类名、文件路径、实测结果）；没把握的写进「待核实」，不写进 json。核实过「本项目没有 / 不适用」的字段写进 `_notApplicable`（例：没有按语言换样式材质的体系就把 `text.fontRoot` 等列进去），之后不再提示调研。推翻旧事实时在「变更记录」写一行原因。事实文件随本次工作按项目的提交规范一起提交。
    - 工具读不到事实时会明确提示「先调研哪个字段」，不会按别的项目的名字瞎猜。
 3. 项目已有自己的换皮规范 / 工具（grep `class ReskinCore`、`.claude/skills/*reskin*`、`docs/*换皮*`）→ 以项目的为准，下面只作补充。
 4. 需要 Unity 编辑器工具时：`bash <skill>/scripts/install_unity_package.sh` → 装成 `Packages/com.agent.uireskin`（嵌入式包，不改 manifest、不碰 Assets，自动写进本机 `.git/info/exclude`；工程自带 UIReskin 时自动跳过）。工具运行时从 Unity 工程往上找 `.uireskin/facts.json`（环境变量 `UIRESKIN_FACTS` 可指定）。
