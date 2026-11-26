@@ -1,10 +1,10 @@
-// 用途：统计"挂了 LocalizationText 却不是 TMP_Font_Normal(_Title)"的文字节点，生成给美术的修改清单（references/review.md §6.2）。
+// 用途：统计"挂了 LocalizationText 却不是 TMP_Font_Normal(_Title)"的文字节点（references/review.md §6.2）。直接修复用 LocFontFix.cs（同一套判定与映射）。
 // 适用：DragonCD3 宿主多语言体系（LocalizationText 只在 TMP_Font_Normal / _Title 上挂语言回退）。工程里没有这两个字体时直接返回「不适用」。
-// 只读，不改任何 prefab——这类字体问题默认交美术修改，程序只统计、反馈、复核。
+// 只读，不改任何 prefab：用于修复前看全貌、修复后复核（应只剩"原有"项）。
 // 每行给出：prefab、节点路径、多语言 id、当前字体 / 材质、建议字体、建议材质（按美术维护的预设映射表 MatMap），
 // 以及换皮前（OLD）的状态，用来区分"本轮改坏 / 本轮新挂 / 原有"。也会列出"动态文本误挂 LocalizationText(id=0)"建议美术删组件。
 // 前提：Assets/_TmpUIAuditOld/（换皮前）已导出；ART 指向美术版副本或直接用 "Assets/"（取美术用的 LocaleFont 材质名）。
-// 输出按 prefab 分组，直接贴进给美术的文档（也可用 scripts/prefab_audit.py locfont --appendix 出 git 侧版本）。
+// 输出按 prefab 分组，可直接贴进审查文档（也可用 scripts/prefab_audit.py locfont --appendix 出 git 侧版本）。
 using System;
 using System.Linq;
 using System.Text;
@@ -71,8 +71,8 @@ public class LocFontReport
             sb.AppendLine($"\n### {rel}\n\n| 节点 | 多语言 id | 当前字体 / 材质 | 建议修改 | 状态 |\n|---|---|---|---|---|");
             foreach (var l in lines) sb.AppendLine(l);
         }
-        var head = "## 挂 LocalizationText 的字体问题清单（请美术修改）\n\n汇总：" + string.Join("，", cnt.Select(kv => kv.Key + " " + kv.Value)) + "\n";
-        if (missing.Count > 0) head += "\n缺少对应 TMP_Font_Normal 预设的美术材质（请补 3<X> 预设或确认用默认）：" + string.Join("、", missing) + "\n";
+        var head = "## 挂 LocalizationText 的字体问题清单\n\n汇总：" + string.Join("，", cnt.Select(kv => kv.Key + " " + kv.Value)) + "\n";
+        if (missing.Count > 0) head += "\n缺少对应 TMP_Font_Normal 预设的美术材质（修复时会用默认材质，告知美术补 3<X> 预设）：" + string.Join("、", missing) + "\n";
         return cnt.Count == 0 ? "没有发现挂 LocalizationText 却不是 TMP_Font_Normal 的节点" : head + sb;
     }
 }

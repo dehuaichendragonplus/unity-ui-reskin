@@ -22,7 +22,8 @@
 | `BindAudit.cs` | 第 3 节第 1 项：DragonCD3 `[Binding]` 新旧对比（其他框架返回「不适用」） | 只读 |
 | `HierDiff.cs` | 第 3 节第 3、4、7、8 项：节点、组件、显隐、引用变化 | 只读 |
 | `LocCompDiff.cs` | 第 3 节第 5 项：多语言组件增减与 id / key / 样式字段变化 | 只读 |
-| `LocFontReport.cs` | 第 6.2 节：字体问题清单（DragonCD3 规范字体体系），带建议字体和预设，交美术 | 只读 |
+| `LocFontReport.cs` | 第 6.2 节：字体问题全貌 / 修复后复核（DragonCD3 规范字体体系） | 只读 |
+| `LocFontFix.cs` | 第 6.2 节：直接修字体（→ TMP_Font_Normal，材质映射到美术预设，删误挂组件）；`DRY` 预演后写入，返回修改记录 | 写 prefab |
 | `InteractAudit.cs` | 第 3 节第 10 项：BLOCKED / MASKOFF / OVERSIZE；有旧版快照时标「原有 / 已不存在」 | 只读（临时画布用完即销毁） |
 | `FxCompare.cs` | 第 6.3 节：美术版 vs 当前的效果类型对比 | 只读 |
 | `RuntimeLocPlaceholder.cs` | Play 中：激活的 `LocalizationText` 占位写回检查 | 只读 |

@@ -11,7 +11,7 @@ bash install.sh --python   # 可选：同时建 Python 图像环境（首次用�
 
 装完新开一个 Claude Code 会话，直接说需求即可触发，例如：
 - 「美术给了新切图和 PSD，按效果图把商店界面还原一下」
-- 「美术在 v1.2.0 之后换皮了，审查一下要不要改代码，给美术出修改清单」
+- 「美术在 v1.2.0 之后换皮了，审查并直接修好」（默认程序直接改 prefab、字体、代码，测试后提交，最后出修改记录告知美术）
 
 ## 零配置是怎么做到的
 
@@ -50,11 +50,3 @@ unity-ui-reskin/                 ← 整个目录就是 skill
   snippets/reskin|review/        execute_code 一次性片段
   examples/                      样式 JSON 示例；FoodFlow1 开界面写法（项目特化参考）
 ```
-
-## 与 BubbleWord3 项目内版本的关系
-
-- BubbleWord3 仓库里的 `ui-reskin` / `ui-reskin-review`（项目级 skill）+ `Tools/ui_reskin`、`Tools/ui_review`、`Assets/Editor/UIReskin` 保持不变，它们带着该项目的事实库与决策，在该项目里优先使用。
-- 本包是去掉项目耦合后的通用版，新增：自动探测（C# `ReskinConfig`、Python `uir_project.py`）、嵌入式包安装、`export_snapshot` 改 Python 并支持任意资源仓库布局、`prefab_audit` 参数化（`--loc-script` / `--allowed-font` / `--forbid-loc-under`）、`OpenViews` 改为按常见 UI 管理器约定自动找打开方法、`crop_effect` / `align_nodes` 支持 auto / 任意裁切框。
-- 验证：在 BubbleWord3 上 `prefab_audit refs/fonts/locfont` 与原版输出逐行一致；C# 自动探测在 BubbleWord3 编辑器里实跑，识别出 `DragonPlus.LocalizeTextMeshProUGUI.m_Matrial`、字体根 `Assets/Res/FishPool/_Resources/Export/Fonts/`（De/En/Es/Fr/Jp/Zh）、模板 `LocaleFont_{lang} SDF`。
-
-来源版本：BubbleWord3 main `155bb7c8`（2026-11-26）。
