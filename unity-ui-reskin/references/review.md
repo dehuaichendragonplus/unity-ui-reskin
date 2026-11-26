@@ -3,6 +3,7 @@
 > 适用于美术替换界面资源（贴图、字体、布局、文字样式）之后：评估「要不要改代码、要不要改 prefab」，并**默认由程序直接修复**（含 prefab 与字体），修完测试、提交，最后把修改记录告知美术。
 > 依据 BubbleWord3 2026-11 的六轮换皮审查实例（宿主 / 经济 / 鱼缸多界面换字体、横版改竖版滚动列表、玩法局内面板整套重做、程序自拼弹窗分支合并）整理成项目无关版。
 > `<skill>` = 本 skill 目录。工具说明见 `references/review-tools.md`。项目有自己的审查规范 / 事实库时以项目为准。
+> 本规范不绑定任何框架：本地化组件、规范字体、材质映射、界面基类、绑定特性等一律取**项目事实**（仓库根 `.uireskin/facts.json` + `facts.md`）；事实里没有就先调研、核实后写入（SKILL.md 第一步），工具在缺项时会明确提示。
 
 ## 0. 原则
 
@@ -11,7 +12,7 @@
 3. **静态判断要用运行时证实**：静态比对只能找出「可疑」，严重度在 Play 里实测确认。截图看不清时直接读运行时数值（文本、激活状态、滚动位置）。
 4. **代码改动最小化**：代码只做适配（组件类型放宽、逻辑改成与方向无关），不重建界面、不绕开规范。文案 id、显隐、层级在 prefab 里修。
 5. **修复要保留美术意图**：恢复规范（字体、层级）的同时保留美术这次的视觉效果（描边、阴影、配色、布局），不要整体退回换皮前。
-6. **挖完即记**：核实出的项目事实当场记进项目记忆 / 事实库；未闭环事项写进发版提醒清单（项目有的话）。
+6. **挖完即记**：核实出的项目事实当场写进 `.uireskin/facts.json` / `facts.md`（项目另有事实库的同步一份）；未闭环事项写进发版提醒清单（项目有的话）。
 7. **默认直接修，不出待办清单**：审查出的问题（代码适配、prefab、字体、图集、断引用、显隐、锚点……）由程序按推荐方案**直接改**，测试截图后提交推送，不停下来等用户逐项选、也不把 prefab / 字体问题甩给美术。只有这几类停下来问用户：新功能取舍、玩法 / 数值 / 时序改动、改交互方式这类产品决策。程序做不了的（缺原图、缺效果预设、缺多语言词条）先用安全兜底落地（隐藏、默认材质、复用同义词条），并在文档「告知美术 / 策划」一节写明缺什么。用户明确说「只评估、先别改」时才只交评估文档。
 8. **先摸清美术的设计意图，再改代码**：大的布局改动（横版改竖版、分页改滚动）先在 Play 里临时改运行时值做试验（缩放还原为 1、打开滚动和遮罩、显示被隐藏的节点），看哪种状态和设计对得上，再改代码。
 9. 美术提前做了**尚未实现功能**的界面：prefab 保留美术设计，代码在开窗时隐藏，等功能开工再接线。新文字**缺多语言词条**：先找同义词条复用；没有的先隐藏该文字，交策划补词条，不让占位文案上线。美术**原地替换了别的界面也在用的图**：恢复原图，新图另起名，改本次 prefab 的引用。
@@ -55,12 +56,12 @@ Unity 片段在 `<skill>/snippets/review/`，用 MCP `execute_code` 整段运行
 
 | # | 检查项 | 怎么查 | 判据 / 常见后果 |
 |---|---|---|---|
-| 1 | UI 框架绑定路径和组件 | `BindAudit.cs`（DragonCD3 `[Binding]` 体系）新旧各跑一遍；其他框架 grep 绑定声明 | 只报**新增**的失败。按路径取组件的框架缺节点会抛异常，整窗打不开 |
+| 1 | UI 框架绑定路径和组件 | `BindAudit.cs` 新旧各跑一遍（界面基类、绑定特性及路径成员、prefab 键取项目事实 `framework`；项目不是「特性按路径绑定」时 grep 绑定声明） | 只报**新增**的失败。按路径取组件的框架缺节点常会抛异常，整窗打不开 |
 | 2 | 代码里写死的路径 | `grep -rnE '(Find\|FindChild\|GetItem\|Binding\|transform\.Find)\("…"'`，再用第 3 项的删除节点名反查 | 删改名的节点被代码引用 → 必改 |
 | 3 | 层级和组件变化 | `HierDiff.cs`：删除 / 新增节点、组件增减、默认激活翻转、新增同名兄弟、断引用 | 组件类型变化（`Horizontal`↔`VerticalLayoutGroup`、`Text`↔TMP、本地化组件互换）要 grep `GetComponent<T>` / `is T`。同名兄弟会让 `Find` 只命中第一个 |
 | 4 | 默认显隐翻转 | 第 3 项的 `ACTIVE` 行，再 grep 代码是否在显示时设置该节点 | 代码会设置的不受影响；不设置的就是功能变化（入口被隐藏、灰态常显）。另查：代码强制显示、美术隐藏并挪位的节点是否重叠；美术新增默认显示的**带 Button 节点**是否盖住原按钮（第 11 项）；反向：美术显示 / 换图的节点被代码在开窗时隐藏或换图（grep `SetActive(false)`、`.sprite =`） |
 | 5 | 多语言组件 | `LocCompDiff.cs`：新挂 / 去掉的本地化组件与 id / key / 样式字段变化 | 动态文本新挂 id=0 → 占位值写回。同一节点叠两套多语言组件 → 删多余的。id 改动核对文案语义 |
-| 6 | 字体和效果 | `prefab_audit.py fonts` / `locfont`；Unity 侧看材质关键字 | 项目有「本地化组件必须用规范字体」约束时（如 DragonCD3 `LocalizationText` + `TMP_Font_Normal`）：不合规 → 中日韩显示 `□`、切语言不生效。`Resources/` 下的 prefab 引用热更字体 → 开机就是方块、包体重复。记下美术用的效果材质名，修复时保留效果 |
+| 6 | 字体和效果 | `prefab_audit.py fonts` / `locfont`；Unity 侧看材质关键字 | 项目有「本地化组件必须用规范字体」约束时（项目事实 `localization.component` / `requiredFonts`）：不合规常见后果是中日韩显示 `□`、切语言不生效。`Resources/` 下的 prefab 引用热更字体 → 开机就是方块、包体重复。记下美术用的效果材质名，修复时保留效果 |
 | 7 | 滚动和布局方向 | 第 3 项里 `ScrollRect` / LayoutGroup / 锚点 / pivot 的变化 | 代码里的滚动复位、动画是否只处理一个方向（`horizontalNormalizedPosition`、`DOLocalMoveX`）。列表改成「滚动 + 遮罩」时查列表项图片的 `maskable` 和比卡片大的装饰图的 `raycastTarget` |
 | 8 | 断引用 | `prefab_audit.py refs`、`HierDiff` 的 `BROKENREF`；`git diff --name-status` 的删除 | 只报本轮新出现的。美术常把半透明全屏参考图留在 prefab 里（默认隐藏、图没提交）→ 删掉 |
 | 9 | 项目守卫测试 | 用 MCP `run_tests` 跑涉及这些 prefab 的 EditMode 测试（grep 测试目录里出现的 prefab 名）；图集 / 资源清单类守卫不会出现 prefab 名，按程序集整跑 | 新失败逐条归因；与 prefab 无关的单独标注。守卫遇到第一个失败就停的，修掉后重跑 |
@@ -78,10 +79,10 @@ Unity 片段在 `<skill>/snippets/review/`，用 MCP `execute_code` 整段运行
 ## 4. 运行时审查
 
 1. 进 Play（项目默认语言、测试号）。刚进 Play 几秒内的白块通常是资源还在加载，过几秒再截。
-2. 打开界面：先跑 `snippets/review/OpenViews.cs`（自动按常见 UI 管理器约定找打开方法，找不到会列候选）；确认好的打开方式记进项目记忆。玩法内面板尽量按真实流程打开（价格、礼包由真实逻辑写入）。
+2. 打开界面：先跑 `snippets/review/OpenViews.cs`（自动按常见 UI 管理器约定找打开方法，找不到会列候选）；项目事实 `framework.open` 有记载就直接照它调；确认好的打开方式写回 `framework.open / close`。玩法内面板尽量按真实流程打开（价格、礼包由真实逻辑写入）。
    - 片段里别写 `"\\n"` 这种字符串字面量（有的 MCP 严格路径检查会误拦），换行用 `Replace('\n', '~')`。
 3. **读数值，不能只看截图**：Game 视图可能被压得很窄。直接读 TMP 文本、激活状态、`verticalNormalizedPosition`、换算后的包围盒，跟期望值比对。
-4. 占位值检查：`RuntimeLocPlaceholder.cs` 列出激活中的 `LocalizationText(id=0)` 及强制文本（项目没有该组件时不适用）。显示值等于 prefab 占位值（如 1234、"Large Bundle"）就是写回问题。
+4. 占位值检查：`RuntimeLocPlaceholder.cs` 列出激活中的本地化组件（项目事实 `localization.component`）及其 id / key，id 未设置的重点看（项目没有该组件时不适用）。显示值等于 prefab 占位值（如 1234、"Large Bundle"）就是写回问题。
 5. 每个有问题的界面截一张图留证；字体问题至少看一遍中文，条件允许再看日 / 韩。
    - 有交互的界面用**真实点击**走关键路径，留意返回里的 `blockedBy`。
    - 列表滚到首尾，看有没有图片没被裁剪。
@@ -113,10 +114,10 @@ Unity 片段在 `<skill>/snippets/review/`，用 MCP `execute_code` 整段运行
 ### 6.2 prefab 侧
 - **只用 Unity Editor API** 修改（`PrefabUtility.LoadPrefabContents` → 改 → `SaveAsPrefabAsset` → `UnloadPrefabContents`），编辑器开着时不手改 YAML。整文件恢复到某提交可以 `git checkout <rev> -- <file>`。
 - **依赖顺序**：先改被嵌套的源 prefab 和 Variant 的基础 prefab，再改外层；内层刚改过的外层留到下一轮（重新导入后才看到新值）。脚本写成可重复跑，跑到「本轮零改动」为止。
-- **字体问题（有规范字体约束的项目）由程序直接修**：先 `LocFontReport.cs` / `prefab_audit.py locfont` 看全貌，再 `LocFontFix.cs` 先 `DRY = true` 预演、确认后 `DRY = false` 写入，重复跑到零改动，最后 `LocFontReport.cs` 复核只剩注明的「原有」。修复规则（DragonCD3 体系，`LocFontFix.cs` 已实现）：
-  1. 只针对挂了 `LocalizationText` 的文字：换成 `TMP_Font_Normal`（标题可用 `_Title`），切语言才生效。没挂的（自带按语言换字体的组件、纯数字）不强制。
-  2. 材质按「换字体前」美术用的 `LocaleFont_En SDF <X>` 映射到美术维护的 `TMP_Font_Normal 3<X>` 预设；`Shadow` / `Describe` / `Title` 用 `OutLine Black`；其余用默认材质。映射表在 `LocFontReport.cs` 顶部，美术新增预设时同步。
-  3. 动态文本上新挂的 `LocalizationText(id=0)`：删组件。
+- **字体问题（有规范字体约束的项目）由程序直接修**：先 `LocFontReport.cs` / `prefab_audit.py locfont` 看全貌，再 `LocFontFix.cs` 先 `DRY = true` 预演、确认后 `DRY = false` 写入，重复跑到零改动，最后 `LocFontReport.cs` 复核只剩注明的「原有」。修复规则（`LocFontFix.cs` 已实现，参数全部取项目事实 `localization`）：
+  1. 只针对挂了 `component` 的文字：换成 `requiredFonts[0]`（换皮前是 `titleFont` 的保持 `titleFont`）。没挂的（自带按语言换字体的组件、纯数字）不强制。
+  2. 材质：美术版材质名去掉字体名前缀得到样式名，按 `materialMap`（样式名 → 预设材质）映射；没有映射的用字体默认材质并列出来，核实后补进 `materialMap`。
+  3. 动态文本上新挂的本地化组件（id 未设置）：删组件。
   4. 「原有」（换皮前就不合规）的节点默认不改，`FIX_PRE = true` 才一起改。
   - **材质要按美术版映射到预设，不能退回换皮前的材质**：曾有直接改字体把材质退回旧值、丢了美术描边阴影（109 / 192 个节点）的教训。改完用 `FxCompare.cs` 对比美术版，效果类型不一致的逐个修到一致。
   - **不由程序生成效果材质**：效果材质是美术维护的预设；映射表没有或预设不存在时先用字体默认材质，在「告知美术」里列出缺哪些预设。
@@ -142,7 +143,7 @@ Unity 片段在 `<skill>/snippets/review/`，用 MCP `execute_code` 整段运行
 
 ## 8. 收尾
 
-- 项目事实与决策记进项目记忆 / 事实库；未闭环事项写进发版提醒。
+- 项目事实写进 `.uireskin/`（facts.json + facts.md，推翻旧结论写变更记录），决策同步项目自己的事实库 / 文档；未闭环事项写进发版提醒。
 - 把「告知美术 / 策划」一节发给对方：程序已改了哪些 prefab（请先拉最新再改这些文件）、兜底处缺什么。附上以后换皮的约定（可直接转发）：
   1. 有规范字体约束的文字用规范字体，效果用美术预设材质；动态文本不要挂静态多语言组件。
   2. 一个文字节点只挂一套多语言组件。

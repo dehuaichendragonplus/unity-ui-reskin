@@ -1,6 +1,6 @@
 # unity-ui-reskin（代理端界面替换 / 换皮审查工具包）
 
-把 BubbleWord3（源自 FoodFlow1）沉淀的「按效果图 1:1 还原界面」与「美术换皮审查」两套 skill + 工具，再加上「按 PSD 新建界面到功能可用」，做成 **Claude Code 用户级 skill**：装一次，任何 Unity 项目直接可用，**项目里不需要任何配置文件**。
+把 BubbleWord3（源自 FoodFlow1）沉淀的「按效果图 1:1 还原界面」与「美术换皮审查」两套 skill + 工具，再加上「按 PSD 新建界面到功能可用」，做成 **Claude Code 用户级 skill**：装一次，任何 Unity 项目直接可用，**不需要预先配置**：项目差异现场调研，结论存进项目仓库的 `.uireskin/`，下次直接用。
 
 ## 安装
 
@@ -14,20 +14,34 @@ bash install.sh --python   # 可选：同时建 Python 图像环境（首次用�
 - 「按这份 PSD 新做一个签到界面，接好功能」（生成骨架与控件 → 照项目框架写代码 → 配图集与资源 → 打开验证）
 - 「美术在 v1.2.0 之后换皮了，审查并直接修好」（默认程序直接改 prefab、字体、代码，测试后提交，最后出修改记录告知美术）
 
-## 零配置是怎么做到的
+## 项目差异怎么处理：不内置框架，现场调研，事实存仓库
+
+不同项目的 UI 框架、本地化组件、字体规范、资源管理都不一样，本包**不写死任何项目 / 框架的名字**。做法是：
+
+1. **读项目事实**：仓库根 `.uireskin/facts.json`（工具读）+ `.uireskin/facts.md`（人看：结论、证据、待核实、变更记录）。用到的字段有值就直接用。
+2. **缺什么调研什么**：工具只给候选、不下结论——`uir_project.py info`（本地化组件类、TMP 字体引用排行、CanvasScaler 参考分辨率）、`ReskinConfig.Dump()`（文字 / 字体，逐字段标「事实 / 探测，待核实」）、`ReskinSurvey.Run()`（界面基类、绑定特性、打开 / 关闭接口）、`ReskinAssets.Survey()`（资源管理与图集）。代理读源码、实测核实。
+3. **写回仓库**：核实的结论写进 facts.json，证据写进 facts.md，随本次工作一起提交；下次（换人、换会话）直接读，不再重新摸。
+4. **缺事实时不瞎猜**：审查片段、prefab_audit 等读不到事实会明确提示「先调研哪个字段」，不会套用别的项目的组件名 / 字体名。
+
+| facts.json 段 | 内容 | 谁在用 |
+|---|---|---|
+| `unity` | Unity 工程目录、资源仓库 / 子模块 | 审查脚本 |
+| `ui` | UI 参考分辨率、效果图手机画面裁切框（按名字记）、新 prefab / 切图目录 | crop_effect、align_nodes、spec_to_layout、生成器、InteractAudit |
+| `text` | 本地化文字组件与样式字段、字体目录与命名模板、默认字体、描边校准、写材质后的钩子 | ReskinConfig → 体检 / 文字样式 / 生成器 |
+| `localization` | 静态多语言组件、id / key 字段、规范字体、标题字体、材质映射、不该挂的模块 | prefab_audit、LocFontReport / Fix、LocCompDiff、RuntimeLocPlaceholder |
+| `framework` | 界面基类、绑定特性及路径 / 可空 / 组件成员、注册特性及 prefab 键、打开 / 关闭、参照界面 | BindAudit、新建界面写业务代码 |
+
+示例见 `unity-ui-reskin/examples/facts-example/`（虚构项目）。
+
+纯结构性的事仍然全自动、不需要事实：
 
 | 项目差异 | 自动处理方式 |
 |---|---|
 | Unity 工程在哪 | 从当前目录往上找；仓库根下 2 层内找（排除子模块里的美术工程） |
 | 资源在主仓 / 子模块 / 软链进来的独立仓库 | 按用户给的 tag / 提交，在主仓、所有子模块、Assets 下软链指向的仓库里找能解析它的那个 |
 | 编辑器工具（C#） | 代理首次需要时运行 `install_unity_package.sh`，装成嵌入式包 `Packages/com.agent.uireskin`：不改 `manifest.json`、不碰 `Assets/`，自动写进本机 `.git/info/exclude` 不会被误提交；工程自带 UIReskin 时自动跳过；asmdef 有版本宏保护，缺 TMP / 2D Sprite 包时安全跳过而不是让工程报错 |
-| 本地化文字组件、样式字段、多语言 key 字段 | `ReskinConfig` 运行时用 TypeCache 识别（优先 `LocalizeTextMeshProUGUI`，否则找带材质名字符串字段的组件） |
-| 语言字体目录、字体 / 样式材质命名 | 扫描 TMP 字体资产：名字里含所在目录名的按「根目录 + 模板」分组，取语言数最多的一组 |
-| 写材质后要刷新的字库清单 | 项目里给一个静态方法标 `[UIReskin.UIReskinHook]` 即自动调用（不需要就不用管） |
-| 审查用的本地化组件 / 规范字体 | 按脚本名、资产名自动查 guid；项目没有就自动跳过该项并说明「不适用」 |
-| 效果图手机画面 | `crop_effect.py auto` 自动去纯色边框；整屏设计时提示代理目视后传坐标 |
-
-探测结果缓存在 `Library/UIReskin/detected.json`（不进版本库）。确实探测错了才需要写 `ProjectSettings/UIReskinConfig.json` 覆盖个别字段。每个项目确认过的画面裁切、参考分辨率、开界面方式等，由代理写进该项目的记忆，下次直接用。
+| 写材质后要刷新的字库清单 | 项目里给一个静态方法标 `[UIReskin.UIReskinHook]` 即自动调用，或写进事实 `text.afterMaterialsHook` |
+| 效果图手机画面 | `crop_effect.py auto` 自动去纯色边框；整屏设计时提示代理目视后传坐标，确认后记进事实 `ui.effectFrames` |
 
 ## 新建界面能自动做到哪
 
@@ -41,7 +55,7 @@ bash install.sh --python   # 可选：同时建 Python 图像环境（首次用�
 | 业务代码 | 代理照项目写 | `ReskinSurvey` 普查出项目的界面基类、绑定方式、打开接口；代理照最相近的界面写，推断不出的数据来源 / 配置 id / 价格列「待确认」，不编造 |
 | 对齐与验证 | 全自动测量 | 生成后直接走还原流程：运行时测量 → 差异 → 自动修正；真实点击验证按钮 |
 
-实测（2026-11-26，Unity 6000.3 全新工程，零配置）：战令界面 PSD（278 个图层）→ 108 个节点的 prefab，1.1 秒生成，导入 57 张切图（10 张内容相同自动复用）、6 个按钮、1 个进度条；默认图层名的结算界面按结构识别出 Free / 900 两个按钮；合成列表界面生成的 ScrollRect 间距、边距与 PSD 一致，关闭键 / 进度条 / 开关实例化后位置与 PSD 坐标逐像素一致。BubbleWord3 上 `ReskinSurvey` 找出 `DragonCD3.UI.View`（95 个界面）、`[Binding("Root/...")]` 绑定、`UISystem.ShowView<T>` 打开接口。
+实测（2026-11-26，Unity 6000.3 全新工程，无任何配置）：战令界面 PSD（278 个图层）→ 108 个节点的 prefab，1.1 秒生成，导入 57 张切图（10 张内容相同自动复用）、6 个按钮、1 个进度条；默认图层名的结算界面按结构识别出 Free / 900 两个按钮；合成列表界面生成的 ScrollRect 间距、边距与 PSD 一致，关闭键 / 进度条 / 开关实例化后位置与 PSD 坐标逐像素一致。BubbleWord3 上 `ReskinSurvey` 找出 `DragonCD3.UI.View`（95 个界面）、`[Binding("Root/...")]` 绑定、`UISystem.ShowView<T>` 打开接口。
 
 ## 用到的技术
 
@@ -49,7 +63,7 @@ bash install.sh --python   # 可选：同时建 Python 图像环境（首次用�
 |---|---|---|
 | 代理编排 | Claude Code Skill（`SKILL.md` 入口 + `references/` 按需加载） | 按任务只读需要的规范，流程、铁律、坑速查都由代理执行，不靠人记 |
 | 驱动 Unity | Unity MCP（funplay：`execute_code`、`capture_game_view`、`simulate_mouse_click`、`run_tests`） | 在编辑器里跑工具、截图、真实点击验证遮挡、跑守卫测试 |
-| 零配置探测 | Unity `TypeCache` + 反射；AssetDatabase 扫描 TMP 字体资产并按「目录名 ∈ 资产名」分组；prefab YAML 抽样；git 子模块 / 软链仓库解析 | 自动识别本地化组件与样式字段、语言字体目录与材质命名、资源仓库，结果缓存在 `Library/` |
+| 调研候选与项目事实 | Unity `TypeCache` + 反射；AssetDatabase 扫描 TMP 字体资产并按「目录名 ∈ 资产名」分组；prefab YAML 抽样；git 子模块 / 软链仓库解析 | 自动识别本地化组件与样式字段、语言字体目录与材质命名、资源仓库，结果缓存在 `Library/` |
 | 编辑器工具分发 | 嵌入式 UPM 包 + asmdef `versionDefines` / `defineConstraints` + `.git/info/exclude` | 不改 manifest、不碰 Assets、缺 TMP / 2D Sprite 时安全跳过、不会误提交 |
 | 运行时测量 | `RectTransformUtility` 世界坐标 → 屏幕像素、TMP `textBounds` 字形框、`GameViewSizes` 反射设分辨率、`ScreenCapture` | 导出每个节点的精确屏幕矩形与文字参数（`runtime.json`），运行时一侧零误差 |
 | 动画快进 | DOTween（反射）、Animator、Legacy Animation、PlayableDirector 推到末帧 | 截图 / 测量前跳过入场动画，避免截到中间态 |
@@ -90,7 +104,7 @@ bash install.sh --python   # 可选：同时建 Python 图像环境（首次用�
 | 字体改动 / 规范字体违规统计 | 逐节点看 TMP 字体 | `fonts` / `locfont` 各约 5 秒，报出 204 个违规节点并分「本轮改坏 / 新挂 / 原有」 | BubbleWord3 实测 |
 | 整轮静态核对 117 个 prefab | 在 Unity 里逐个打开对照，按每个 2–5 分钟约 4–10 小时 | git 侧全量约 30 秒，再加 Unity 侧片段（绑定、层级、多语言、可点击）各一次 | 传统侧为**估算** |
 | 修 204 个字体节点 | 逐个改字体 + 挑材质，按每个约 1 分钟约 3 小时以上，且曾因退回旧材质丢了 109 / 192 个节点的描边阴影 | `LocFontFix.cs` 预演后批量写入，材质按美术版映射到预设 | 传统侧为**估算**；批量修复片段已编译通过，尚未在真实 prefab 上跑过 |
-| 新项目接入 | 照搬工具要改硬编码路径、组件名、字体目录 | 零配置，自动探测；探测一次约 7 秒（BubbleWord3 编辑器实测） | 实测 |
+| 新项目接入 | 照搬工具要改硬编码路径、组件名、字体目录 | 不改代码：缺的事实现场调研（候选探测一次约 7 秒，BubbleWord3 编辑器实测） | 实测 |
 
 ### 结论
 
@@ -117,7 +131,7 @@ unity-ui-reskin/                 ← 整个目录就是 skill
     review-tools.md              审查工具说明
     art-delivery.md              给美术的效果图交付规范
     research.md                  工具选型调研（FoodFlow1）
-  scripts/                       Python / Shell（uir_project.py 零配置探测、spec_to_layout.py 骨架 + 控件推断、install_unity_package.sh、crop_effect、psd_to_spec、diff、align_nodes、export_snapshot、prefab_audit ……）
+  scripts/                       Python / Shell（uir_project.py 工程探测 / 调研候选 / 项目事实、spec_to_layout.py 骨架 + 控件推断、install_unity_package.sh、crop_effect、psd_to_spec、diff、align_nodes、export_snapshot、prefab_audit ……）
   unity-package/com.agent.uireskin/   编辑器工具（命名空间 UIReskin，菜单 Tools/UIReskin）
   snippets/reskin|review/        execute_code 一次性片段
   examples/                      样式 JSON 示例；FoodFlow1 开界面写法（项目特化参考）

@@ -7,8 +7,8 @@
 //      ShowView<T> / Show<T> / Open<T> / OpenView<T> / OpenWindow<T> / OpenUI<T> / Push<T>（关闭：HideView / Hide / Close / CloseView / CloseWindow / CloseUI / Pop）
 //   2) 同名非泛型方法，参数是 System.Type 或 string（类名）
 //   方法有其他可选参数时用默认值；必需参数不止一个的跳过。
-// 找不到时返回候选方法清单：从里面挑对的，按 OpenViewInPlayLoop.cs 的方式直接写调用；把确认好的打开方式记进项目记忆，下次直接用。
-// 例（BubbleWord3）：GameManager.UISystem.ShowView<T>()、FishPoolWindows.Show<T>()。
+// 项目事实 framework.open 已记载打开方式时，直接照它写调用，不用跑本片段。
+// 找不到时返回候选方法清单：从里面挑对的，确认后写进项目事实 framework.open / close（facts.md 记证据），下次直接用。
 using System;
 using System.Collections.Generic;
 using System.Linq;

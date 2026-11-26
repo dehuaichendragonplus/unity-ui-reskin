@@ -135,6 +135,7 @@ namespace UIReskin
                     if (needMat && string.IsNullOrEmpty(srcSuffix))
                     {
                         srcSuffix = ReskinConfig.Data.fallbackSourceStyle;
+                        if (string.IsNullOrEmpty(srcSuffix)) { sb.AppendLine($"  ⚠ {s.path} 当前材质 '{cur}' 不符合 materialPattern，且没有 fallbackSourceStyle：改用 ReskinMaterialStyle 显式指定源材质"); continue; }
                         sb.AppendLine($"  ⚠ {s.path} 当前材质 '{cur}' 不符合 materialPattern，克隆源改用 fallbackSourceStyle '{srcSuffix}'（dry-run 若报 MISSING 请改用 ReskinMaterialStyle）");
                     }
                     var line = new StringBuilder($"  {s.path.Substring(System.Math.Max(0, s.path.Length - 60))}:");

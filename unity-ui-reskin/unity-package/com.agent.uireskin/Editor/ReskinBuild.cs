@@ -2,7 +2,7 @@
 // 生成内容：
 //   - 节点层级与 RectTransform（锚点按 layout 的 anchor：stretch / top|middle|bottom - left|center|right|stretchX）
 //   - 图片：Image；切图按「工程里同名 Sprite → 导入 layout 里的图层 PNG → 品红半透明占位」顺序解析（导入由 ReskinAssets 负责，目录 / 导入设置对齐邻居）
-//   - 文字：TextMeshProUGUI（字号、颜色、字距、对齐、顶点渐变、不换行），字体：layout.font → 工程里的 TMP_Font_Normal → 探测到的语言字体 → TMP 默认字体
+//   - 文字：TextMeshProUGUI（字号、颜色、字距、对齐、顶点渐变、不换行），字体：项目事实 text.defaultFont → 工程 prefab 里引用最多的 TMP 字体 → TMP 默认字体
 //   - 控件：button / close → Button；progress → Slider（不可拖，fill 子节点转拉伸）或 Filled Image；toggle → Toggle；
 //           list → ScrollRect + Viewport(RectMask2D) + Content + Vertical/Horizontal/Grid LayoutGroup（子项保持原尺寸，第一项是模板）
 //   - 隐藏状态组的节点默认不激活
@@ -317,9 +317,8 @@ namespace UIReskin
                 return null;
             }
             var font = Find(name);
-            string why = "layout.font";
-            if (font == null) { font = Find("TMP_Font_Normal"); why = "工程规范字体 TMP_Font_Normal"; }
-            if (font == null && !string.IsNullOrEmpty(ReskinConfig.Data.fontRoot)) { font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(ReskinConfig.FontAssetPath(ReskinConfig.Data.reportLang)); why = "探测到的语言字体"; }
+            string why = "layout.font（项目事实 text.defaultFont）";
+            if (font == null && !string.IsNullOrEmpty(ReskinConfig.Data.defaultFont)) { font = Find(ReskinConfig.Data.defaultFont); why = "ReskinConfig.defaultFont（事实或 prefab 里最常用的字体）"; }
             if (font == null) { try { font = TMP_Settings.defaultFontAsset; why = "TMP 默认字体"; } catch { } }   // 没导入 TMP Essentials 时 TMP_Settings 为空
             if (font == null) { var any = AssetDatabase.FindAssets("t:TMP_FontAsset").FirstOrDefault(); if (any != null) { font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(AssetDatabase.GUIDToAssetPath(any)); why = "工程里第一个 TMP 字体"; } }
             if (font == null) sb.AppendLine("  ⚠ 工程里没有任何 TMP 字体（未导入 TMP Essentials？）：文字节点先不带字体，导入后重新生成或手动指定");

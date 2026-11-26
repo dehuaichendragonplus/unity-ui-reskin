@@ -15,6 +15,7 @@
 // 注意：必须先 dry-run 看有无「缺源 / 缺节点 / ⚠ dilate 到上限」。拉丁字库 pointSize 大（~110）时，小字号（约 40px 以下的 3px 投影）会到上限，画不满。
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using TMPro;
 using UnityEditor;
@@ -40,6 +41,7 @@ namespace UIReskin
             if (Application.isPlaying && !dryRun) return "请先退出 Play";
             var spec = JsonUtility.FromJson<Spec>(File.ReadAllText(ReskinCore.Abs(specPath)));
             foreach (var m in spec.materials) if (string.IsNullOrEmpty(m.source)) m.source = ReskinConfig.Data.defaultCloneSource;
+            if (spec.materials.Any(m => string.IsNullOrEmpty(m.source))) return "⚠ materials[].source 没写，项目事实 text.defaultCloneSource 也没有：先确认用哪个已有样式材质当克隆源";
             if (string.IsNullOrEmpty(ReskinConfig.Data.locTextType)) return "⚠ ReskinConfig.locTextType 为空：本工具要写本地化文字组件的样式字段，项目没有这类组件时改用 ReskinTextStyle 或手工换材质";
             var langs = ReskinTextStyle.Langs;
             var sb = new StringBuilder($"[RESKIN] 材质克隆 {(dryRun ? "DRY-RUN" : "APPLY")} 语言 {string.Join("/", langs)} 材质 {spec.materials.Count} 种 节点 {spec.nodes.Count} 个\n");

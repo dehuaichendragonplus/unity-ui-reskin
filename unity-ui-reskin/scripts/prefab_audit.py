@@ -3,14 +3,15 @@
 
 子命令：
   fonts   <BASE> <TO>   改了字体的 TMP 节点：按"原字体 -> 新字体"汇总，并按 prefab 列出；Resources 下的 prefab 单独标出
-  locfont <BASE> <TO>   挂了本地化组件（默认 LocalizationText）却不是规范字体（默认 TMP_Font_Normal / _Title）的节点，
-                        标出"本轮改坏 / 本轮新挂 / 原本就不是"；工程里没有该组件或规范字体时自动跳过
+  locfont <BASE> <TO>   挂了本地化组件却不是规范字体的节点，标出"本轮改坏 / 本轮新挂 / 原本就不是"。
+                        组件与规范字体取项目事实 localization.component / requiredFonts（参数可覆盖）；未调研时跳过并提示
                         --appendix <文件>  另外输出 Markdown 附录表（prefab | 节点路径(多语言 id) | 状态）
   refs    <BASE> <TO>   改过的 prefab 里：引用了工程中不存在的 guid（断引用，多为美术遗留的参考图 / 字体）、
                         旧版 UnityEngine.UI.Text 节点（代码按 TMP 取会取空）。只报 <TO> 里新出现的，原有的单独计数
-                        --forbid-loc-under <路径片段>  路径含该片段的 prefab 里出现本地化组件也报（某模块不该挂宿主多语言组件时用，可重复）
+                        --forbid-loc-under <路径片段>  路径含该片段的 prefab 里出现本地化组件也报（默认取项目事实 localization.forbidUnder，可重复）
 
-通用参数：--unity <Unity 工程>  --repo <资源仓库>  --loc-script <组件类名>  --allowed-font <字体资产名>（可重复）
+通用参数：--unity <Unity 工程>  --repo <资源仓库>  --loc-script <组件类名>  --allowed-font <字体资产名>（可重复）  --id-field <多语言 id 字段>
+不带参数时一律取项目事实（.uireskin/facts.json），不内置任何项目的组件名 / 字体名。
 <TO> 写 WORKTREE 表示读资源仓库工作区当前文件。
 局限：只认 prefab 文件里自己定义的 GameObject；嵌套实例在外层的覆盖值看不到，最终以 Unity 里的复核为准。
 
@@ -33,7 +34,7 @@ LOC_GUID = None     # 本地化组件脚本 guid（可能为 None）
 DOC_RE = re.compile(r'^--- !u!(\d+) &(-?\d+)[^\n]*\n', re.M)
 GO_RE = re.compile(r'm_GameObject: \{fileID: (-?\d+)')
 FONT_RE = re.compile(r'm_fontAsset: \{fileID: -?\d+, guid: ([0-9a-f]+)')
-LOCID_RE = re.compile(r'm_LocalizationID: (-?\d+)')
+LOCID_RE = None   # main 里按项目事实 localization.idField 生成
 
 
 def git(*args):
@@ -64,7 +65,7 @@ def font_names():
 
 
 class Prefab:
-    """按 GameObject 汇总：名字、层级路径、TMP 字体 guid、LocalizationText 的 id。"""
+    """按 GameObject 汇总：名字、层级路径、TMP 字体 guid、本地化组件的 id。"""
 
     def __init__(self, text, loc_guid):
         parts = DOC_RE.split(text)
@@ -90,7 +91,7 @@ class Prefab:
                 if fm:
                     self.font[g.group(1)] = fm.group(1)
                 if loc_guid in body:
-                    lm = LOCID_RE.search(body)
+                    lm = LOCID_RE.search(body) if LOCID_RE else None
                     self.loc[g.group(1)] = int(lm.group(1)) if lm else 0
         self._tf_go, self._father, self._go_tf = tf_go, father, go_tf
         self.docs = {fid: body for fid, (cls, body) in docs.items()}
@@ -130,8 +131,11 @@ def cmd_fonts(a):
 
 
 def cmd_locfont(a):
+    if not a.loc_script or not a.allowed_font:
+        print('项目事实未记载 localization.component / requiredFonts：先调研（uir_project.py info 列候选，读组件源码确认它要求的字体）再写入 .uireskin/facts.json；本项跳过')
+        return 0
     if not LOC_GUID:
-        print(f'工程里没有 {a.loc_script}.cs，跳过 locfont（不适用本项目）')
+        print(f'工程里找不到 {a.loc_script}.cs（项目事实里的组件名不对？），跳过 locfont')
         return 0
     loc = LOC_GUID
     ok = set(up.find_asset_guids(UNITY, a.allowed_font, asset_repo=RES))
@@ -231,18 +235,26 @@ def main():
         s.add_argument('to')
         s.add_argument('--unity')
         s.add_argument('--repo')
-        s.add_argument('--loc-script', default='LocalizationText')
+        s.add_argument('--loc-script')
         s.add_argument('--allowed-font', action='append')
+        s.add_argument('--id-field')
         if name == 'locfont':
             s.add_argument('--appendix')
         if name == 'refs':
             s.add_argument('--forbid-loc-under', action='append')
     a = ap.parse_args()
-    a.allowed_font = a.allowed_font or ['TMP_Font_Normal', 'TMP_Font_Normal_Title']
-    global RES, UNITY, LOC_GUID
+    global RES, UNITY, LOC_GUID, LOCID_RE
     UNITY = up.find_unity(override=a.unity)
-    RES = up.find_asset_repo(UNITY, [a.base, a.to], override=a.repo)
-    LOC_GUID, _ = up.find_script_guid(UNITY, a.loc_script, RES)
+    F = up.load_facts(UNITY)
+    a.loc_script = a.loc_script or up.fact(F, 'localization.component')
+    a.allowed_font = a.allowed_font or up.fact(F, 'localization.requiredFonts') or []
+    id_field = a.id_field or up.fact(F, 'localization.idField')
+    LOCID_RE = re.compile(re.escape(id_field) + r': (-?\d+)') if id_field else None
+    if getattr(a, 'forbid_loc_under', None) is None and a.cmd == 'refs':
+        a.forbid_loc_under = up.fact(F, 'localization.forbidUnder') or []
+    RES = up.find_asset_repo(UNITY, [a.base, a.to], override=a.repo or (os.path.join(up.repo_root(UNITY), up.fact(F, 'unity.assetRepo')) if up.fact(F, 'unity.assetRepo') else None))
+    LOC_GUID = up.find_script_guid(UNITY, a.loc_script, RES)[0] if a.loc_script else None
+    print(f'[项目事实 {F.get("_path", "无")}]', file=sys.stderr)
     print(f'[Unity {UNITY}] [资源仓库 {RES}]', file=sys.stderr)
     sys.exit({'fonts': cmd_fonts, 'locfont': cmd_locfont, 'refs': cmd_refs}[a.cmd](a))
 

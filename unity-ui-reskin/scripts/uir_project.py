@@ -1,10 +1,14 @@
-"""UIReskin 工具链的零配置探测：Unity 工程、仓库根、资源仓库（含子模块）、本地化组件脚本、规范字体、效果图画面。
+"""UIReskin 工具链的项目识别与「项目事实」读写。
+
+通用包里不内置任何项目 / 框架知识：用到时现场调研，核实后写进项目仓库的 .uireskin/facts.json（工具读）与 facts.md（人看：结论 + 证据 + 待核实），
+下次直接读事实。本模块只做两件事：找工程 / 仓库这类纯结构探测，以及给调研列候选（不替项目下结论）。
 
 命令行（python3 -I uir_project.py <子命令>）：
-  info [--unity DIR]            打印探测结果（代理首次在项目里使用时先跑这个）
+  info [--unity DIR]            工程 / 仓库 / 子模块 / 事实文件状态 + 调研候选（本地化组件、常用字体、参考分辨率）
+  facts init                    在仓库根建 .uireskin/facts.json + facts.md 模板（已存在不覆盖）
+  facts show                    打印当前事实，并列出空着的字段（要用到时先调研补齐）
   unity                         只打印 Unity 工程目录
   asset-repo <REV> [<REV2>]     打印包含该提交 / tag 的 git 仓库（主仓或子模块）
-所有探测都可用参数覆盖，不读任何配置文件。
 """
 import os
 import re
@@ -165,11 +169,166 @@ def find_asset_guids(unity, names, suffix=".asset", asset_repo=None):
     return out
 
 
+# ---------- 项目事实 ----------
+FACTS_DIR = ".uireskin"
+FACTS_TEMPLATE = {
+    "schema": 1,
+    "updated": "",
+    "_说明": "UIReskin 项目事实：只写核实过的结论；证据、来源与待核实项写在同目录 facts.md。空字符串 / 空数组 = 未调研，工具会提示先调研。",
+    "unity": {"project": "", "assetRepo": ""},
+    "ui": {"refWidth": 0, "refHeight": 0, "match": "", "prefabDir": "", "spriteDir": "", "effectFrames": {}, "defaultFrame": ""},
+    "text": {"defaultFont": "", "locTextType": "", "locMaterialField": "", "locMaterialPrefix": "", "locTermField": "",
+             "fontRoot": "", "fontAssetPattern": "", "materialPattern": "", "defaultMaterialStyle": "", "fallbackSourceStyle": "",
+             "defaultCloneSource": "", "reportLang": "", "outlineCalibration": 0, "healthFieldMatchesMaterial": False, "afterMaterialsHook": ""},
+    "localization": {"component": "", "idField": "", "keyField": "", "requiredFonts": [], "titleFont": "", "materialMapFontPrefix": "",
+                     "materialMap": [], "forbidUnder": [], "fixPolicy": ""},
+    "framework": {"viewBase": "", "bindingAttribute": "", "bindingPathMember": "", "bindingOptionalMember": "", "bindingComponentMember": "",
+                  "descriptorAttribute": "", "descriptorKeyMember": "",
+                  "open": "", "close": "", "register": "", "referenceViews": []},
+}
+FACTS_MD_TEMPLATE = """# UIReskin 项目事实
+
+> 由代理调研后写入，供 unity-ui-reskin skill 直接使用。**只记核实过的结论**，每条写证据（文件路径 / 类名 / 实测结果）；没把握的放「待核实」。
+> 机器可读部分在同目录 `facts.json`，两边改动保持一致。推翻旧结论时在「变更记录」写一行原因。
+
+## 画面与坐标
+- UI 参考分辨率：
+- 效果图规格与手机画面裁切：
+- 新 prefab / 切图放哪：
+
+## 文字与字体
+- 本地化文字组件与样式字段：
+- 规范字体 / 字体问题由谁改：
+- 描边校准系数：
+
+## UI 框架（写业务代码用）
+- 界面基类与生命周期：
+- 节点绑定方式：
+- 注册方式：
+- 打开 / 关闭界面：
+- 参照界面：
+
+## 资源管理与图集
+- 资源加载方式（Resources / Addressables / YooAsset / 自研）与约定：
+- 图集约定：
+
+## 待核实
+
+## 变更记录
+"""
+
+
+def facts_path(root):
+    return os.path.join(root, FACTS_DIR, "facts.json")
+
+
+def load_facts(unity=None, root=None):
+    """读 .uireskin/facts.json；没有返回 {}（调用方按「未调研」处理）"""
+    import json
+    if root is None:
+        try:
+            root = repo_root(unity or find_unity())
+        except SystemExit:
+            return {}
+    p = os.environ.get("UIRESKIN_FACTS") or facts_path(root)   # 环境变量可指向别处的事实文件（测试 / 多工程共用）
+    if not os.path.exists(p):
+        return {}
+    with open(p, encoding="utf-8") as f:
+        d = json.load(f)
+    d["_path"] = p
+    return d
+
+
+def fact(facts, dotted, default=None):
+    """facts.get('a.b.c')；空字符串 / 空数组 / 0 视为未填"""
+    cur = facts
+    for k in dotted.split("."):
+        if not isinstance(cur, dict) or k not in cur:
+            return default
+        cur = cur[k]
+    return default if cur in ("", [], {}, 0, None) else cur
+
+
+def empty_fields(d, prefix=""):
+    out = []
+    for k, v in d.items():
+        if k.startswith("_") or k in ("schema", "updated"):
+            continue
+        key = f"{prefix}{k}"
+        if isinstance(v, dict) and v and k != "effectFrames":
+            out += empty_fields(v, key + ".")
+        elif v in ("", [], {}, 0, None):
+            out.append(key)
+    return out
+
+
+# ---------- 调研候选（只列候选，不下结论） ----------
+CLASS_RE = re.compile(r"\bclass\s+(\w*Locali[sz]\w*)\s*:\s*([\w.<>, ]+)")
+
+
+def research_loc_components(unity):
+    """项目源码里名字含 Locali(s|z)e 的组件类 → [(类名, 基类, 路径)]"""
+    out = []
+    for p in walk_files([os.path.join(unity, "Assets"), os.path.join(unity, "Packages")], ".cs"):
+        try:
+            with open(p, errors="ignore") as f:
+                txt = f.read()
+        except OSError:
+            continue
+        if "/Editor/" in p.replace("\\", "/"):
+            continue
+        for m in CLASS_RE.finditer(txt):
+            if re.search(r"(Attribute|Editor|System|Drawer|Preference|Manager|Config|Settings?|Provider|Service|Table|Data)$", m.group(1)):
+                continue
+            out.append((m.group(1), m.group(2).strip(), os.path.relpath(p, unity)))
+    return out
+
+
+FONT_REF_RE = re.compile(r"m_fontAsset: \{fileID: -?\d+, guid: ([0-9a-f]{32})")
+REFRES_RE = re.compile(r"m_ReferenceResolution: \{x: ([\d.]+), y: ([\d.]+)\}")
+
+
+def research_prefab_usage(unity, limit=3000):
+    """抽样 prefab / 场景：TMP 字体引用次数排行、CanvasScaler 参考分辨率排行"""
+    import collections
+    fonts, refres, n = collections.Counter(), collections.Counter(), 0
+    for p in walk_files([os.path.join(unity, "Assets")], ".prefab"):
+        n += 1
+        if n > limit:
+            break
+        try:
+            with open(p, errors="ignore") as f:
+                txt = f.read()
+        except OSError:
+            continue
+        fonts.update(FONT_REF_RE.findall(txt))
+        refres.update(f"{float(a):g}x{float(b):g}" for a, b in REFRES_RE.findall(txt))
+    for p in walk_files([os.path.join(unity, "Assets")], ".unity"):
+        try:
+            with open(p, errors="ignore") as f:
+                refres.update(f"{float(a):g}x{float(b):g}" for a, b in REFRES_RE.findall(f.read()))
+        except OSError:
+            pass
+    names = {}
+    if fonts:
+        want = set(g for g, _ in fonts.most_common(8))
+        for mp in walk_files([os.path.join(unity, "Assets"), os.path.join(unity, "Packages")], ".asset.meta"):
+            g = meta_guid(mp)
+            if g in want:
+                names[g] = os.path.basename(mp)[:-len(".asset.meta")]
+    return [(names.get(g, g[:8]), c) for g, c in fonts.most_common(8)], refres.most_common(4), min(n, limit)
+
+
 # ---------- 效果图画面 ----------
-def parse_frame(spec):
-    """'x0,y0,x1,y1' → 元组；'auto' / 'full' 原样返回"""
+def parse_frame(spec, facts=None):
+    """'x0,y0,x1,y1' → 元组；'auto' / 'full' 原样返回；其他名字到项目事实 ui.effectFrames 里查"""
     if spec in (None, "", "auto", "full"):
         return spec or "auto"
+    frames = fact(facts or {}, "ui.effectFrames", {}) or {}
+    if spec in frames:
+        return tuple(int(v) for v in frames[spec])
+    if not re.match(r"^[\d.,\s-]+$", spec):
+        raise SystemExit(f"--frame {spec}：项目事实 ui.effectFrames 里没有这个名字（现有 {list(frames)}）；或传 auto / full / x0,y0,x1,y1")
     v = [int(float(x)) for x in spec.split(",")]
     if len(v) != 4:
         raise SystemExit(f"--frame 需要 x0,y0,x1,y1，收到 {spec}")
@@ -194,10 +353,10 @@ def auto_frame(rgb, tol=18, min_frac=0.02):
     return x0, y0, x1, y1, True
 
 
-def apply_frame(im, spec, width=None):
+def apply_frame(im, spec, width=None, facts=None):
     """PIL 图按画面规格裁剪并按宽缩放；返回 (新图, 说明)"""
     from PIL import Image
-    f = parse_frame(spec)
+    f = parse_frame(spec, facts)
     note = ""
     if f == "auto":
         x0, y0, x1, y1, cut = auto_frame(im.convert("RGB"))
@@ -218,9 +377,10 @@ def apply_frame(im, spec, width=None):
 
 def main():
     import argparse
+    import json
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=["info", "unity", "asset-repo"])
-    ap.add_argument("revs", nargs="*")
+    ap.add_argument("cmd", choices=["info", "unity", "asset-repo", "facts"])
+    ap.add_argument("args", nargs="*")
     ap.add_argument("--unity")
     a = ap.parse_args()
     unity = find_unity(override=a.unity)
@@ -228,9 +388,35 @@ def main():
         print(unity)
         return
     if a.cmd == "asset-repo":
-        print(find_asset_repo(unity, a.revs or ["HEAD"]))
+        print(find_asset_repo(unity, a.args or ["HEAD"]))
         return
     root = repo_root(unity)
+    if a.cmd == "facts":
+        sub_cmd = (a.args or ["show"])[0]
+        p = facts_path(root)
+        if sub_cmd == "init":
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            if os.path.exists(p):
+                print(f"已存在，不覆盖：{p}")
+            else:
+                t = json.loads(json.dumps(FACTS_TEMPLATE))
+                t["unity"]["project"] = os.path.relpath(unity, root)
+                with open(p, "w", encoding="utf-8") as f:
+                    json.dump(t, f, ensure_ascii=False, indent=2)
+                print(f"已建 {p}")
+            md = os.path.join(os.path.dirname(p), "facts.md")
+            if not os.path.exists(md):
+                with open(md, "w", encoding="utf-8") as f:
+                    f.write(FACTS_MD_TEMPLATE)
+                print(f"已建 {md}")
+            return
+        d = load_facts(root=root)
+        if not d:
+            print(f"没有项目事实：{p}（先 facts init，再按需调研补齐）")
+            return
+        print(json.dumps({k: v for k, v in d.items() if not k.startswith("_")}, ensure_ascii=False, indent=2))
+        print("\n未填（用到时先调研）：" + "、".join(empty_fields(d)))
+        return
     ver = ""
     pv = os.path.join(unity, "ProjectSettings", "ProjectVersion.txt")
     if os.path.exists(pv):
@@ -241,18 +427,23 @@ def main():
     print(f"候选资源仓库 {candidate_repos(unity)}")
     pkg = os.path.join(unity, "Packages", "com.agent.uireskin", "package.json")
     print(f"UIReskin 包  {'已安装' if os.path.exists(pkg) else '未安装（scripts/install_unity_package.sh）'}")
-    g, p = find_script_guid(unity, "LocalizationText")
-    print(f"LocalizationText 脚本 {p or '无'}")
-    g2, p2 = find_script_guid(unity, "LocalizeTextMeshProUGUI")
-    print(f"LocalizeTextMeshProUGUI 脚本 {p2 or '无'}")
-    fonts = find_asset_guids(unity, ["TMP_Font_Normal", "TMP_Font_Normal_Title"])
-    print(f"TMP_Font_Normal 规范字体 {list(fonts.values()) or '无'}")
+    d = load_facts(root=root)
+    if d:
+        miss = empty_fields(d)
+        print(f"项目事实     {d['_path']}（更新 {d.get('updated') or '?'}；未填 {len(miss)} 项，facts show 查看）")
+    else:
+        print(f"项目事实     无（{facts_path(root)}）：用到哪项调研哪项，核实后写入；facts init 建模板")
+    print("\n## 调研候选（不是结论：核实后写进项目事实）")
+    locs = research_loc_components(unity)
+    print("本地化组件候选：" + ("；".join(f"{n} : {b}（{p}）" for n, b, p in locs[:8]) or "无"))
+    fonts, refres, n = research_prefab_usage(unity)
+    print(f"TMP 字体引用排行（抽样 {n} 个 prefab）：" + ("，".join(f"{nm} ×{c}" for nm, c in fonts) or "无"))
+    print("CanvasScaler 参考分辨率排行：" + ("，".join(f"{r} ×{c}" for r, c in refres) or "无"))
     mf = os.path.join(unity, "Packages", "manifest.json")
     if os.path.exists(mf):
         txt = open(mf).read()
-        for k in ("com.unity.textmeshpro", "com.unity.ugui", "com.unity.2d.sprite", "com.funplay", "unity-mcp", "mcp"):
-            if k in txt:
-                print(f"manifest 含   {k}")
+        pk = [k for k in ("com.unity.textmeshpro", "com.unity.ugui", "com.unity.2d.sprite", "com.unity.addressables", "com.tuyoogame.yooasset", "yooasset") if k in txt]
+        print("相关包：" + ("、".join(pk) or "无"))
 
 
 if __name__ == "__main__":

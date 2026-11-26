@@ -1,4 +1,4 @@
-// 用途：可点 / 可裁剪审查（references/review.md §3 第 11 项）。不进 Play，把 prefab 放进一块 768×1365 的临时画布里静态判断：
+// 用途：可点 / 可裁剪审查（references/review.md §3 第 11 项）。不进 Play，把 prefab 放进一块临时画布（尺寸 = 项目事实 ui.refWidth × refHeight，没有事实时 768×1365）里静态判断：
 //   BLOCKED   按钮中心点最上层接射线的图形不是按钮自己（或其子节点），且它的父链上没有点击处理 → 点了没反应（实例：灰色 LockButton 盖住 EnterButton）
 //   MASKOFF   滚动列表内容里、或"列表项 prefab"（根节点非全拉伸）里 maskable=false 的图形 → 开遮罩后画出可视区（实例：列表项 5 张图画出可视区）
 //   OVERSIZE  列表内容里 / 列表项 prefab 里接射线、却没有点击处理、尺寸超出所在项的图形 → 挡住相邻项的点击（实例：放大的选中框挡住相邻项）
@@ -6,7 +6,7 @@
 // PREFABS 为空时审 _TmpUIAuditOld 里出现的那批 prefab 的新版。只读：临时画布与实例用完即销毁。
 // 局限：按层级先序当绘制顺序（同一画布内成立；嵌套 Canvas 的 overrideSorting 不考虑）；代码运行时才改的显隐 / 遮罩开关看不到，结论要在 Play 里证实。
 //   例：选缸窗 EnterButton / LockButton 在 prefab 里都激活、运行时由代码二选一，修复后仍会报 BLOCKED（被另一个可点对象接走）——这类要回代码确认谁来切换。
-// 验证：在 BubbleWord3 美术原版选缸窗上跑过，BLOCKED / MASKOFF / OVERSIZE 与 Play 实测一致。临时画布 768×1365，项目参考分辨率不同时改 CanvasScaler 那一行。
+// 验证：在真实项目的美术原版选缸窗上跑过，BLOCKED / MASKOFF / OVERSIZE 与 Play 实测一致。
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -44,7 +44,7 @@ public class InteractAudit
         try
         {
             canvasGo.GetComponent<Canvas>().renderMode = RenderMode.WorldSpace;
-            ((RectTransform)canvasGo.transform).sizeDelta = new Vector2(768, 1365);
+            ((RectTransform)canvasGo.transform).sizeDelta = RefSize();
             var go = (GameObject)PrefabUtility.InstantiatePrefab(prefab, canvasGo.transform);
             var root = (RectTransform)go.transform;
             Canvas.ForceUpdateCanvases();
@@ -87,6 +87,32 @@ public class InteractAudit
         }
         finally { Object.DestroyImmediate(canvasGo); }
         return keys;
+    }
+
+    [System.Serializable] public class UiF { public float refWidth, refHeight; }
+    // funplay 片段编译在内存程序集里，JsonUtility 只认顶层字段：先截出某一段再解析成扁平类
+    static string Section(string j, string key)
+    {
+        if (j == null) return null;
+        int k = j.IndexOf("\"" + key + "\"", System.StringComparison.Ordinal); if (k < 0) return null;
+        int i = j.IndexOf('{', k); if (i < 0) return null;
+        int depth = 0; bool str = false;
+        for (int p = i; p < j.Length; p++)
+        {
+            char c = j[p];
+            if (str) { if (c == '\\') p++; else if (c == '"') str = false; continue; }
+            if (c == '"') str = true; else if (c == '{') depth++; else if (c == '}' && --depth == 0) return j.Substring(i, p - i + 1);
+        }
+        return null;
+    }
+    static Vector2 RefSize()
+    {
+        var env = System.Environment.GetEnvironmentVariable("UIRESKIN_FACTS"); string json = null;
+        if (!string.IsNullOrEmpty(env) && System.IO.File.Exists(env)) json = System.IO.File.ReadAllText(env);
+        var d = new System.IO.DirectoryInfo(System.IO.Path.GetDirectoryName(Application.dataPath));
+        for (int i = 0; json == null && d != null && i < 6; i++, d = d.Parent) { var p = System.IO.Path.Combine(d.FullName, ".uireskin", "facts.json"); if (System.IO.File.Exists(p)) json = System.IO.File.ReadAllText(p); }
+        var ui = JsonUtility.FromJson<UiF>(Section(json, "ui") ?? "{}");
+        return ui != null && ui.refWidth > 0 && ui.refHeight > 0 ? new Vector2(ui.refWidth, ui.refHeight) : new Vector2(768, 1365);
     }
 
     public static string Run()

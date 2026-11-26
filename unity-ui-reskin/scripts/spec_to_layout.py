@@ -2,8 +2,9 @@
 """spec.json（psd_to_spec / figma_to_spec 的输出）→ layout.json：新建界面的骨架节点树，交给 Unity 端 UIReskin.ReskinBuild.Build 生成 prefab。
 
 做什么：
-  - 取手机画面：--frame auto|full|x0,y0,x1,y1（同 crop_effect.py；auto 用 spec 的 preview.png 去纯色边框）
-  - 换算单位：--ref-width = 项目 UI 参考宽（根 CanvasScaler 的 referenceResolution.x，常见 768 / 750 / 1080）；不给 = 画面宽（1 px = 1 单位）
+  - 取手机画面：--frame auto|full|x0,y0,x1,y1|<项目事实 ui.effectFrames 里的名字>（同 crop_effect.py；默认取项目事实 ui.defaultFrame，没有就 auto）
+  - 换算单位：--ref-width = 项目 UI 参考宽（默认取项目事实 ui.refWidth；没有就画面宽，1 px = 1 单位）
+  - 字体：layout.font 取项目事实 text.defaultFont（没有就交给 Unity 端按项目里最常用的 TMP 字体选）
   - 层级：PSD 组 → 父节点，图层 → 子节点；保持 PSD 叠放顺序（下层先建，后建的画在上面）；名字里的 / 换成 _，同级重名加 _2 _3（保证路径唯一，ReskinApply 能按路径找到）
   - 锚点（只给第一层节点定，里面的节点相对父节点居中，整组跟着父节点走）：
       几乎铺满画面 → 四边拉伸；宽 ≥ 90% → 横向拉伸；中心在上 25% → 顶部；下 25% → 底部；否则居中；
@@ -106,18 +107,21 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("spec")
     ap.add_argument("--prefab", required=True, help="要生成的 prefab 路径（相对 Unity 工程根，Assets/ 开头）")
-    ap.add_argument("--frame", default="auto")
+    ap.add_argument("--frame")
     ap.add_argument("--ref-width", type=float)
     ap.add_argument("--out")
     ap.add_argument("--include-hidden", action="store_true", help="连 visible=false 且不属于状态组的图层也建（默认跳过）")
     a = ap.parse_args()
     spec = json.load(open(a.spec, encoding="utf-8"))
+    F = up.load_facts()
+    a.frame = a.frame or up.fact(F, "ui.defaultFrame") or "auto"
+    a.ref_width = a.ref_width or up.fact(F, "ui.refWidth")
     out = a.out or os.path.dirname(os.path.abspath(a.spec))
     os.makedirs(out, exist_ok=True)
     W, H = spec["width"], spec["height"]
 
     # 1) 手机画面
-    f = up.parse_frame(a.frame)
+    f = up.parse_frame(a.frame, F)
     note = ""
     if f == "full":
         frame = (0, 0, W, H)
@@ -395,7 +399,8 @@ def main():
     for c in children.get((), []):
         emit(c, "", 0)
 
-    layout = {"source": spec.get("source"), "prefab": a.prefab, "refWidth": RW, "refHeight": RH, "frame": list(frame),
+    layout = {"source": spec.get("source"), "prefab": a.prefab, "font": up.fact(F, "text.defaultFont", ""), "spriteDir": up.fact(F, "ui.spriteDir", ""),
+              "refWidth": RW, "refHeight": RH, "frame": list(frame),
               "scale": round(k, 5), "nodes": out_nodes}
     json.dump(layout, open(os.path.join(out, "layout.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     json.dump({"prefab": a.prefab, "nodes": bindings}, open(os.path.join(out, "bindings.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)

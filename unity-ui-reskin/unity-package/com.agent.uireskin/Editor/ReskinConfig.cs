@@ -1,11 +1,12 @@
-// UIReskin 项目适配：本地化文字组件、语言字体目录、材质命名、截图目录、写材质后的钩子。
-// 零配置：首次使用时自动探测（结果缓存到 Library/UIReskin/detected.json，不进版本库），探测不到的项对应工具会明确报「跳过 / 不支持」。
-// 可选覆盖：Unity 工程根目录下 ProjectSettings/UIReskinConfig.json，写哪个字段就覆盖哪个（JsonUtility 格式，字段名同 ReskinConfigData）。
-// 常用：ReskinConfig.Dump() 打印生效值与来源；ReskinConfig.Redetect() 重新探测（换了字体目录 / 组件后）。
-// 典型探测结果（DragonPlus LocalizeTextMeshProUGUI 体系）：组件 LocalizeTextMeshProUGUI、样式字段 m_Matrial、key 字段 Term，
-//   字体 <fontRoot><语言>/LocaleFont_<语言> SDF.asset，样式材质 LocaleFont_<语言> SDF <样式>.mat。
+// UIReskin 项目适配：本地化文字组件、语言字体目录、材质命名、默认字体、截图目录、写材质后的钩子。
+// 不内置任何项目的组件名 / 字体名 / 命名规则。取值顺序：
+//   1. 项目事实 .uireskin/facts.json 的 "text" 段（代理调研核实后写入，权威）；
+//   2. 事实里没写的字段：通用探测（TypeCache 找带材质名字段的组件、按目录名分组的 TMP 字体、prefab 抽样），结果缓存在 Library/UIReskin/detected.json。
+//      探测值只是候选：Dump() 会标出来，核实后写进项目事实。
+// 常用：ReskinConfig.Dump() 打印生效值、来源与待调研项；ReskinConfig.Redetect() 丢掉探测缓存重来。
 using System;
 using System.IO;
+using System.Linq;
 using System.Text.RegularExpressions;
 using UnityEditor;
 using UnityEngine;
@@ -16,91 +17,87 @@ namespace UIReskin
     public class ReskinConfigData
     {
         // ---- 本地化文字组件（ReskinProbe / ReskinHealth / ReskinTextStyle / ReskinMaterialStyle 用） ----
-        /// 组件类型名（GetComponent(string) 用短名）。项目没有这类组件时填 ""，文字样式工具只改 TMP 本身。
-        public string locTextType = "LocalizeTextMeshProUGUI";
-        /// 组件上记录「样式材质名」的序列化字段（拼写照组件源码，FoodFlow1 体系就是 m_Matrial）。
-        public string locMaterialField = "m_Matrial";
-        /// 样式字段值的前缀：字段值 = 前缀 + 样式名。FoodFlow1 原版组件不带前缀（""）；BubbleWord3 FishPool 是 "SDF "（字段值 "SDF Shadow Blue"）。
-        /// 按项目组件源码里查样式的规则填，填错会把字段写成运行时查不到的名字。
+        /// 组件类型名（GetComponent(string) 用短名）；空 = 项目没有这类组件 / 未调研，文字样式工具只改 TMP 本身
+        public string locTextType = "";
+        /// 组件上记录「样式材质名」的序列化字段（拼写照组件源码）
+        public string locMaterialField = "";
+        /// 样式字段值的前缀：字段值 = 前缀 + 样式名（按组件源码里查样式的规则填，填错会写成运行时查不到的名字）
         public string locMaterialPrefix = "";
-        /// 体检里「样式字段 ≠ 预制体当前材质的样式名」算问题（true）还是只作提示（false，默认）。
-        /// FoodFlow1 体系 Awake 按当前材质名反推字段，两者必须一致 → 可在覆盖配置里设 true；
-        /// 运行时按字段去字库找材质、预制体材质只是占位的项目（BubbleWord3 FishPool）设 true 会全是误报。
+        /// 体检里「样式字段 ≠ 预制体当前材质的样式名」算问题（true：组件 Awake 按材质名反推字段的体系）还是只作提示（false：运行时按字段查字库的体系）
         public bool healthFieldMatchesMaterial = false;
-        /// 组件上的多语言 key 字段（runtime.json 的 term 用），没有填 ""。
-        public string locTermField = "Term";
+        /// 组件上的多语言 key 字段（runtime.json 的 term 用）
+        public string locTermField = "";
 
-        // ---- 语言字体与样式材质 ----
-        /// 语言字体根目录（以 / 结尾）。每种语言一个子目录，目录名即语言名（De / En / Zh ...）。
-        public string fontRoot = "Assets/Res/Fonts/";
-        /// TMP 字体资产名模板（{lang} = 语言目录名）。用来识别语言目录、读 pointSize、从文字的字体反推语言。
-        public string fontAssetPattern = "LocaleFont_{lang} SDF";
-        /// 样式材质名模板（不含 .mat；{lang} 语言，{style} 样式名）。文件位于 fontRoot/{lang}/ 下。
-        public string materialPattern = "LocaleFont_{lang} SDF {style}";
-        /// 字体资产自带默认材质对应的样式名（不是独立 .mat 文件，体检时跳过）。
+        // ---- 字体 ----
+        /// 新建界面 / 换字体时用的默认 TMP 字体资产名；空 = 用工程 prefab 里引用最多的 TMP 字体
+        public string defaultFont = "";
+        /// 语言字体根目录（以 / 结尾），每种语言一个子目录；空 = 项目没有按语言分目录的字体体系
+        public string fontRoot = "";
+        /// TMP 字体资产名模板（{lang} = 语言目录名）
+        public string fontAssetPattern = "";
+        /// 样式材质名模板（不含 .mat；{lang} 语言，{style} 样式名），文件在 fontRoot/{lang}/ 下
+        public string materialPattern = "";
+        /// 字体资产自带默认材质对应的样式名（TMP 默认材质名是「<字体> Material」）
         public string defaultMaterialStyle = "Material";
-        /// ReskinTextStyle 找不到节点当前样式时用来克隆的源样式名。
-        public string fallbackSourceStyle = "Button OutLine Orange";
-        /// ReskinMaterialStyle 的 materials[].source 缺省值。
-        public string defaultCloneSource = "Shadow Blue";
-        /// 文字里用于打印 dilate 的语言（报告只打一种语言，避免刷屏）。
-        public string reportLang = "En";
-        /// 描边像素校准系数：理论公式算出的描边在实际 SDF 字体上的粗细比。FoodFlow1 实测 1.54；新项目首次使用按 diff 报告「实测宽比」校准。
+        /// ReskinTextStyle 找不到节点当前样式时用来克隆的源样式名
+        public string fallbackSourceStyle = "";
+        /// ReskinMaterialStyle 的 materials[].source 缺省值
+        public string defaultCloneSource = "";
+        /// 报告里打印 dilate 的语言
+        public string reportLang = "";
+        /// 描边像素校准系数（理论公式 → 实测粗细比）。每个项目的字体图集不同，要按 diff 报告「实测宽比」校准后写进项目事实；1.54 是 FoodFlow1 的实测值，仅作起点
         public float outlineCalibration = 1.54f;
 
         // ---- 写完样式材质后的钩子 ----
-        /// 写入新样式材质后调用的静态方法全名 "Namespace.Type.Method"（无参数，返回值转成字符串打进报告）。
-        /// 典型用途：运行时按「样式清单资产」找材质的项目（如 BubbleWord3 FishPoolFontLibrary），新材质不进清单就找不到。
-        /// 不需要就留空。方法写在项目自己的 Editor 程序集里即可（反射调用，不需要互相引用）。
+        /// 写入新样式材质后调用的静态无参方法 "Namespace.Type.Method"（例：把新材质登记进运行时字库清单）；也可在项目代码上标 [UIReskin.UIReskinHook]
         public string afterMaterialsHook = "";
 
         // ---- 截图 / 产物 ----
-        /// 截图与报告的根目录（相对 Unity 工程根）。execute_code 禁止绝对路径，一律用相对路径。
+        /// 截图与报告的根目录（相对 Unity 工程根）
         public string shotsRoot = "Library/ReskinShots";
-        /// Pad 判定：高/宽 ≤ 该值视为 Pad（ReskinMatrix 选 _Pad 预制体）。
+        /// Pad 判定：高/宽 ≤ 该值视为 Pad
         public float padAspectMax = 1.605f;
-        /// Pad 预制体后缀（项目没有 Pad 预制体就保持默认，调用时 prefabPad 传 null）。
+        /// Pad 预制体后缀
         public string padSuffix = "_Pad";
     }
 
     public static class ReskinConfig
     {
-        public const string RelPath = "ProjectSettings/UIReskinConfig.json";
         public const string CachePath = "Library/UIReskin/detected.json";
         static ReskinConfigData _data;
-        static string _source = "";
+        static string _source = "", _detectLog = "", _factsText = null;
 
         public static ReskinConfigData Data
         {
             get
             {
-                if (_data == null) Reload();
+                if (_data == null || ReskinFacts.Section("text") != _factsText) Reload();
                 return _data;
             }
         }
 
-        /// 读缓存的探测结果（没有就探测一次），再叠加 ProjectSettings/UIReskinConfig.json 覆盖
+        /// 探测（有缓存读缓存）→ 叠加项目事实 "text" 段（只覆盖事实里写了的字段）
         public static string Reload()
         {
             var cache = Path.Combine(ReskinCore.ProjectRoot, CachePath);
             ReskinConfigData d = null;
             if (File.Exists(cache))
             {
-                try { d = JsonUtility.FromJson<ReskinConfigData>(File.ReadAllText(cache)); _source = "探测缓存 " + CachePath; } catch { d = null; }
+                try { d = JsonUtility.FromJson<ReskinConfigData>(File.ReadAllText(cache)); _source = "探测缓存"; } catch { d = null; }
             }
-            if (d == null) { d = Detect(out var log); _source = "自动探测（" + log + "）"; SaveCache(d); }
-            var p = Path.Combine(ReskinCore.ProjectRoot, RelPath);
-            if (File.Exists(p))
+            if (d == null) { d = Detect(out _detectLog); _source = "通用探测"; SaveCache(d); }
+            _factsText = ReskinFacts.Section("text");
+            if (_factsText != null)
             {
-                try { JsonUtility.FromJsonOverwrite(File.ReadAllText(p), d); _source += " + 覆盖 " + RelPath; }
-                catch (Exception e) { Debug.LogError($"[RESKIN] {RelPath} 解析失败，忽略：{e.Message}"); }
+                try { JsonUtility.FromJsonOverwrite(_factsText, d); _source += " + 项目事实"; }
+                catch (Exception e) { Debug.LogError("[RESKIN] facts.json 的 text 段解析失败，忽略：" + e.Message); }
             }
             if (!string.IsNullOrEmpty(d.fontRoot) && !d.fontRoot.EndsWith("/")) d.fontRoot += "/";
             _data = d;
             return "[RESKIN] 配置来源：" + _source;
         }
 
-        /// 丢掉缓存重新探测
+        /// 丢掉探测缓存重新探测
         public static string Redetect()
         {
             var cache = Path.Combine(ReskinCore.ProjectRoot, CachePath);
@@ -120,6 +117,22 @@ namespace UIReskin
             catch (Exception e) { Debug.LogWarning("[RESKIN] 探测结果缓存失败：" + e.Message); }
         }
 
+        /// 生效值 + 来源：事实里写了的字段标「事实」，其余标「探测，待核实」；最后列出建议写进项目事实的 JSON
+        public static string Dump()
+        {
+            _data = null; var head = Reload();
+            var sb = new System.Text.StringBuilder(head + "\n" + ReskinFacts.Describe() + "\n");
+            if (!string.IsNullOrEmpty(_detectLog)) sb.AppendLine("探测记录：" + _detectLog);
+            var facts = _factsText ?? "";
+            foreach (var f in typeof(ReskinConfigData).GetFields())
+            {
+                bool fromFacts = facts.Contains("\"" + f.Name + "\"");
+                sb.AppendLine($"  {f.Name,-28} = {f.GetValue(Data)}   [{(fromFacts ? "事实" : "探测，待核实")}]");
+            }
+            sb.AppendLine("核实无误的值写进 .uireskin/facts.json 的 \"text\" 段（同时在 facts.md 写证据），下次直接用。");
+            return sb.ToString();
+        }
+
         // ---------- 自动探测 ----------
         static readonly string[] MatFieldNames = { "m_Matrial", "m_Material", "m_MaterialName", "materialName", "MaterialName" };
         static readonly string[] TermFieldNames = { "Term", "term", "m_Term", "Key", "key", "m_Key" };
@@ -129,22 +142,25 @@ namespace UIReskin
             var d = new ReskinConfigData();
             var notes = new System.Collections.Generic.List<string>();
 
-            // 1) 本地化文字组件：优先 LocalizeTextMeshProUGUI；否则找带「材质名字符串字段」的 Component
+            // 1) 本地化文字组件候选：项目里带「材质名字符串字段」的组件；多个时按 prefab 引用次数取最多的（只是候选，需核实）
+            var cands = TypeCache.GetTypesDerivedFrom<MonoBehaviour>()
+                .Where(t => !t.IsAbstract && t.Namespace?.StartsWith("Unity") != true && t.Namespace?.StartsWith("TMPro") != true && FindStringField(t, MatFieldNames) != null).ToList();
             Type locT = null;
-            foreach (var t in TypeCache.GetTypesDerivedFrom<Component>())
-                if (t.Name == "LocalizeTextMeshProUGUI") { locT = t; break; }
-            if (locT == null)
-                foreach (var t in TypeCache.GetTypesDerivedFrom<MonoBehaviour>())
-                    if (!t.IsAbstract && FindStringField(t, MatFieldNames) != null && t.Namespace?.StartsWith("Unity") != true) { locT = t; break; }
+            if (cands.Count == 1) locT = cands[0];
+            else if (cands.Count > 1)
+            {
+                var usage = cands.ToDictionary(t => t, ScriptUsage);
+                locT = usage.OrderByDescending(kv => kv.Value).First().Key;
+                notes.Add("文字组件候选 " + string.Join("、", usage.OrderByDescending(kv => kv.Value).Select(kv => $"{kv.Key.Name}(prefab 引用 {kv.Value})")));
+            }
             if (locT != null)
             {
                 d.locTextType = locT.Name;
                 d.locMaterialField = FindStringField(locT, MatFieldNames) ?? "";
                 d.locTermField = FindStringField(locT, TermFieldNames) ?? "";
-                notes.Add($"文字组件 {locT.FullName}.{d.locMaterialField}");
-                if (string.IsNullOrEmpty(d.locMaterialField)) { d.locTextType = ""; notes.Add("该组件没有样式字段，按无组件处理"); }
+                notes.Add($"文字组件取 {locT.FullName}.{d.locMaterialField}");
             }
-            else { d.locTextType = ""; d.locMaterialField = ""; d.locTermField = ""; notes.Add("无本地化文字组件"); }
+            else notes.Add("没找到带样式字段的本地化文字组件");
 
             // 2) 语言字体：字体资产名里包含所在目录名（.../En/LocaleFont_En SDF.asset）→ 模板 + 根目录；取语言数最多的一组
             var groups = new System.Collections.Generic.Dictionary<string, System.Collections.Generic.HashSet<string>>();
@@ -207,6 +223,10 @@ namespace UIReskin
                 notes.Add($"字段前缀 '{d.locMaterialPrefix}'（抽样 {total} 个值，SDF 开头 {sdf}）");
             }
 
+            // 3.5) 默认字体候选：prefab 里引用最多的 TMP 字体
+            d.defaultFont = MostUsedTmpFont(out var fontLog);
+            if (!string.IsNullOrEmpty(fontLog)) notes.Add(fontLog);
+
             // 4) 写材质后的钩子：约定任意程序集里的静态无参方法 UIReskinHooks.AfterMaterials
             foreach (var t in TypeCache.GetTypesWithAttribute<UIReskinHookAttribute>())
                 foreach (var m in t.GetMethods(System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic))
@@ -229,9 +249,43 @@ namespace UIReskin
             return null;
         }
 
+        /// 抽样 prefab，统计某个脚本被引用的次数（按脚本 guid）
+        static int ScriptUsage(Type t)
+        {
+            var guid = AssetDatabase.FindAssets(t.Name + " t:MonoScript").Select(AssetDatabase.GUIDToAssetPath)
+                .Where(p => Path.GetFileNameWithoutExtension(p) == t.Name).Select(AssetDatabase.AssetPathToGUID).FirstOrDefault();
+            if (string.IsNullOrEmpty(guid)) return 0;
+            int n = 0, files = 0;
+            foreach (var f in Directory.EnumerateFiles(Application.dataPath, "*.prefab", SearchOption.AllDirectories))
+            {
+                if (++files > 3000) break;
+                try { var txt = File.ReadAllText(f); int i = 0; while ((i = txt.IndexOf(guid, i, StringComparison.Ordinal)) >= 0) { n++; i += 32; } } catch { }
+            }
+            return n;
+        }
+
+        /// prefab 里引用最多的 TMP 字体资产名（m_fontAsset guid 计数）
+        public static string MostUsedTmpFont(out string log)
+        {
+            var cnt = new System.Collections.Generic.Dictionary<string, int>(); int files = 0;
+            var re = new Regex(@"m_fontAsset: \{fileID: -?\d+, guid: ([0-9a-f]{32})");
+            try
+            {
+                foreach (var f in Directory.EnumerateFiles(Application.dataPath, "*.prefab", SearchOption.AllDirectories))
+                {
+                    if (++files > 3000) break;
+                    string txt; try { txt = File.ReadAllText(f); } catch { continue; }
+                    foreach (Match m in re.Matches(txt)) cnt[m.Groups[1].Value] = cnt.TryGetValue(m.Groups[1].Value, out var c) ? c + 1 : 1;
+                }
+            }
+            catch (Exception e) { log = "字体抽样失败 " + e.Message; return ""; }
+            var top = cnt.OrderByDescending(kv => kv.Value).Take(3).Select(kv => (name: Path.GetFileNameWithoutExtension(AssetDatabase.GUIDToAssetPath(kv.Key)), n: kv.Value)).Where(x => !string.IsNullOrEmpty(x.name)).ToList();
+            log = top.Count > 0 ? "常用 TMP 字体 " + string.Join("、", top.Select(x => $"{x.name}×{x.n}")) : "";
+            return top.Count > 0 ? top[0].name : "";
+        }
+
         static string ReplaceOnce(string s, string a, string b) { int i = s.IndexOf(a, StringComparison.Ordinal); return i < 0 ? s : s.Substring(0, i) + b + s.Substring(i + a.Length); }
 
-        public static string Dump() { _data = null; return Reload() + "\n" + JsonUtility.ToJson(Data, true); }
 
         [MenuItem("Tools/UIReskin/打印当前配置")]
         static void MenuDump() => Debug.Log(Dump());

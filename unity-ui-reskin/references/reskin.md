@@ -14,13 +14,14 @@
 - MCP 的 `execute_code` 不写绝对路径：工具 API 一律用**相对 Unity 工程根**的路径（如 `Library/ReskinShots/xxx`），效果图先复制到 `Library/ReskinShots/<界面>/`。
 - 用户在 Play 中时先问再退出 Play；测试改过的存档（关号、体力、金币、语言等）测完还原并汇报。
 
-## 1. 首次在项目里使用（零配置，代理自己做）
+## 1. 在项目里使用（无需预先配置，代理自己做）
 
-1. `python3 -I <skill>/scripts/uir_project.py info`：Unity 工程、仓库根、子模块 / 资源仓库、本地化组件、规范字体、UIReskin 包是否已装。
+0. `python3 -I <skill>/scripts/uir_project.py facts show`：先读项目事实（仓库根 `.uireskin/`），用得到的字段直接用；缺的按下面几步调研，核实后写回（没有就 `facts init` 建模板）。
+1. `python3 -I <skill>/scripts/uir_project.py info`：Unity 工程、仓库根、子模块 / 资源仓库、UIReskin 包、项目事实状态，以及调研候选（本地化组件类、TMP 字体引用排行、CanvasScaler 参考分辨率）。
 2. `bash <skill>/scripts/install_unity_package.sh`：把编辑器工具装成嵌入式包 `Packages/com.agent.uireskin`（不改 manifest、不碰 Assets，自动写进本机 `.git/info/exclude`；工程自带 UIReskin 时自动跳过）。等编译完（`wait_for_compilation` / `get_compilation_errors`）。
-3. `execute_code`：`return UIReskin.ReskinConfig.Dump();` 看自动探测结果（文字组件、样式字段与前缀、语言字体目录、材质命名、钩子）。探测不对时写 `ProjectSettings/UIReskinConfig.json` 覆盖对应字段（只写要改的），`ReskinConfig.Redetect()` 重探测。
+3. `execute_code`：`return UIReskin.ReskinConfig.Dump();` 看文字 / 字体配置：每个字段标「事实」或「探测，待核实」。探测值只是候选（读组件源码、实测核实），核实后写进项目事实的 `text` 段；`ReskinConfig.Redetect()` 丢掉探测缓存重来。
 4. `bash <skill>/scripts/setup.sh`：一次性建 `~/.cache/ui-reskin/venv`（OpenCV、psd-tools）+ 编译 Vision OCR（macOS），已建好就跳过。
-5. **摸清项目画面与坐标**（第 3 节），结论写进项目记忆 / 项目文档，下次直接用。
+5. **摸清项目画面与坐标**（第 3 节），结论写进项目事实（`.uireskin/facts.json` 的 `ui` / `text` 段 + facts.md 写证据），下次直接用。
 
 ## 2. 工具链一览
 
@@ -41,7 +42,7 @@
 
 `execute_code` 里调用编辑器工具：`return UIReskin.ReskinHealth.Check("Assets/...");`。打开界面的协程写法见 `snippets/reskin/OpenViewInPlayLoop.cs`；不知道项目怎么开界面时先跑 `snippets/review/OpenViews.cs`（自动按常见 UI 管理器约定找打开方法）。
 
-## 3. 项目画面与坐标（每个项目首次确认，记进项目记忆）
+## 3. 项目画面与坐标（每个项目首次确认，写进项目事实）
 
 | 项 | 怎么确认 |
 |---|---|
@@ -49,7 +50,7 @@
 | UI 参考分辨率 | 根 Canvas 的 `CanvasScaler`（referenceResolution、match）。参考宽 = 效果图宽时 1 画布单位 = 1 效果图 px；否则换算比 = 参考宽 / 效果图宽 |
 | 自管参考框 | 有些模块（玩法局内 UI）自己算缩放框，不走根 Canvas：grep `CanvasScaler`、`referenceResolution`、`scaleFactor` 找到规则，按它换算 |
 | 世界空间元素 | 棋盘等世界节点按正交相机换算：1 世界单位 = 屏幕高 px / (2 × orthographicSize)；原点 = 屏幕中心。玩法节点（生成点、地板、边界）不要为了对齐挪 |
-| 文字体系 | `ReskinConfig.Dump()`：有 `LocalizeTextMeshProUGUI` 一类组件 → 样式材质按语言目录克隆，必须同时换材质与样式字段；有 `LocalizationText` + 规范字体（如 `TMP_Font_Normal`）→ 这类文字的字体问题由程序用 `LocFontFix.cs` 直接修（review.md §6.2）；纯 TMP → 直接改 TMP |
+| 文字体系 | `ReskinConfig.Dump()` 看事实与探测候选（标「事实 / 探测，待核实」）：有带样式字段的本地化文字组件 → 样式材质按语言目录克隆，必须同时换材质与样式字段（`text` 段）；有「本地化组件 + 规范字体」约束 → 字体问题按 review.md §6.2 由程序直接修（`localization` 段）；纯 TMP → 直接改 TMP。核实后写进项目事实 |
 | `execute_code` 里的 `Screen` | 读到的是编辑器其他视图尺寸，**不是 Game 视图**。换算用 `Camera.pixelWidth/pixelHeight`，或用 `ReskinMatrix`（在 Play 主循环协程里读 Screen） |
 
 ## 4. 流程
@@ -86,7 +87,7 @@
 1. 汇报：资源清单；结构 / 代码改动；`diff.md` 结论（已对齐 / 残余差异及原因）；待策划确认；测试改过的存档是否还原；未验证项。
 2. 截图与报告在 `<Unity 工程>/Library/ReskinShots/<界面>/`；要进文档的对照图放项目文档目录。
 3. 提交（用户要求时）：资源在子模块 / 独立仓库时先提交资源仓库再主仓；不带编辑器运行时改写的无关文件（动态字体资产、被运行时改写的共享材质，用 `git diff --name-only -z | xargs -0 git checkout --` 还原）；`Packages/com.agent.uireskin` 不提交（已在本机 exclude）；推送前 fetch。
-4. 新确认的项目事实（画面裁切、参考分辨率、文字体系、校准系数）写进项目记忆 / 项目文档。
+4. 新确认的项目事实（画面裁切、参考分辨率、文字体系、校准系数）写进 `.uireskin/facts.json` + `facts.md`，随本次工作提交。
 
 ## 5. 坑速查
 
@@ -108,12 +109,14 @@
 | 效果图的样式在美术切图里没有 | 切图太小 / 缺状态图 | 程序按效果图重绘高分辨率版（脚本留在项目 Tools），列「待美术出正式图」 |
 | 列表项偏差大 | 滚动位置 / 数据不同 | 默认只报告；需要时 `--include-list` |
 | 标题比效果图宽 | PS 字距没带过来 | styles.json 的 charSpacing |
-| 描边比效果图粗 / 细 | Underlay 理论公式偏差 | `outlineCalibration`（FoodFlow1 实测 1.54）：按报告「实测宽比」校准，写进 `ProjectSettings/UIReskinConfig.json` 并记进项目记忆 |
+| 描边比效果图粗 / 细 | Underlay 理论公式偏差 | `outlineCalibration`（FoodFlow1 实测 1.54，仅作起点）：按报告「实测宽比」校准后写进项目事实 `text.outlineCalibration` |
 | 小字号英文投影画不满 | 拉丁字库 pointSize 大、gradientScale 小，dilate 被卡在上限 1.0 | 接受略细并记入汇报；要精确得重烧字库图集 padding（美术评估）。`ReskinMaterialStyle` dry-run 逐语言报 ⚠ |
 | `ReskinTextStyle.Apply` 报 MISSING 源材质 | 节点当前材质不在语言字库里（挂的是共享材质） | 改用 `ReskinMaterialStyle.Apply`（源材质显式指定，缺源整体拒绝） |
 | 自动 diff 全是低置信 | 效果图文案 / 数据与运行时不同（语言、进度、名称） | 不硬追自动修正；裁关键区域上下并排放大看（第 6.2 节），位置已对齐就只处理样式 |
 | execute_code 被拦 `SAFETY_CHECK_BLOCKED` | 代码里出现绝对路径 / 删除资产 | 用相对工程根路径；效果图复制进 Library；自己临时建的文件用 shell 删（精确文件名 + meta）再 `AssetDatabase.Refresh` |
 | execute_code 报 `CLASS_NOT_FOUND`（编译却成功） | funplay 按**短类名**找入口、取第一个类：片段包了 namespace，或入口类不在最前 | 片段不要包 namespace，`public static string Run()` 所在类放第一个；类名起得独特些避免和项目全局类型撞名 |
+| 片段里 `JsonUtility.FromJson` 读出来嵌套字段全是空 | funplay 片段编译在内存程序集里，JsonUtility 只认顶层字段（嵌套对象 / 对象数组读不了） | 先截出需要的那一段再解析成扁平类；对象数组用正则取（审查片段都已这么做） |
+| execute_code 报 `SAFETY_CHECK_BLOCKED`（Absolute or system path） | 字符串字面量以 `"\\` 开头被当成 Windows 网络路径（常见于正则 `"\\{..."`） | 正则改用逐字字符串 `@"\{...\}"` |
 | execute_code 返回 `interrupted_without_replay` | 刚改过 C# 触发重编译，域重载打断（没执行、无副作用） | 每次改完 C# 先 `wait_for_compilation` 再发 |
 | OpenCV 读效果图失败（chunk too large） | PNG 带大块元数据 | 用 PIL 读入再转（脚本已处理；自写脚本注意） |
 | 临时产物写进了仓库根 `Library/` | 工作目录在仓库根与 Unity 工程之间切换 | 产物一律放 `<Unity 工程>/Library/ReskinShots/<界面>/`；用绝对路径 cd；提交前看 `git status` |

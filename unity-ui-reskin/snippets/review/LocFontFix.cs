@@ -1,13 +1,11 @@
-// 用途：直接修复"挂了 LocalizationText 却不是 TMP_Font_Normal(_Title)"的文字节点（references/review.md §6.2）。判定与材质映射同 LocFontReport.cs。
-// 适用：DragonCD3 宿主多语言体系。工程里没有 TMP_Font_Normal 时直接返回「不适用」。
+// 用途：直接修复「挂了本地化组件、却不是项目规范字体」的文字节点（references/review.md §6.2）。判定与材质映射同 LocFontReport.cs。
+// 组件名 / id 字段 / 规范字体 / 标题字体 / 材质映射全部取项目事实 .uireskin/facts.json 的 localization 段；缺项时返回需要调研的项，不改任何东西。
 // 做什么（只处理本轮改动过的 prefab = Assets/_TmpUIAuditOld/ 里出现的那批）：
-//   1. 字体 → TMP_Font_Normal（换皮前是 _Title 的保持 _Title）
-//   2. 材质 → 按美术版用的 LocaleFont_En SDF <X> 映射到美术预设 TMP_Font_Normal 3<X>（保留描边 / 阴影效果）；映射表没有或预设资产不存在 → 用字体默认材质，并在结果里列「缺预设」
-//   3. 动态文本上新挂的 LocalizationText(id=0)（换皮前该节点没有这个组件）→ 删掉组件
+//   1. 字体 → requiredFonts[0]（换皮前是 titleFont 的保持 titleFont）
+//   2. 材质 → 美术版材质去掉字体名前缀后的样式名，按 materialMap 映射到预设材质（保留描边 / 阴影）；没有映射或预设不存在 → 字体默认材质，结果里列出
+//   3. 动态文本上新挂的本地化组件（id 未设置，换皮前该节点没有这个组件）→ 删掉组件
 //   不改"原有"（换皮前就不合规）的节点，除非 FIX_PRE = true。
-// 用法：先 DRY = true 跑，看计划；确认后改 DRY = false 再跑。嵌套 prefab 先内后外：重复运行到「本轮零改动」为止。
-// 前提：Assets/_TmpUIAuditOld/（换皮前）已导出；ART 指向美术版副本（_TmpUIAuditArt）或当前 "Assets/"（取美术用的材质名，在改之前跑）。
-// 写完后：用 FxCompare.cs 对比美术版效果类型，Play 里中 / 日 / 韩各看一遍。返回值是 Markdown「修改记录」，直接贴进审查文档。
+// 用法：先 DRY = true 跑看计划，确认后 DRY = false；嵌套 prefab 先内后外，重复运行到「本轮零改动」。返回值是 Markdown 修改记录。
 using System;
 using System.Linq;
 using System.Text;
@@ -22,21 +20,62 @@ public class LocFontFix
     const bool FIX_PRE = false;
     const string OLD = "Assets/_TmpUIAuditOld/";
     const string ART = "Assets/";
-    // 美术用的 LocaleFont_En SDF <X> -> TMP_Font_Normal 预设（同 LocFontReport.cs；美术新增 3<X> 预设时两边同步）。"" = 字体默认材质。
-    static readonly Dictionary<string, string> MatMap = new Dictionary<string, string>
+    [Serializable] public class LF { public string component, idField, titleFont; public string[] requiredFonts; }
+    static LF lf; static Dictionary<string, string> MatMap;
+    // funplay 片段编译在内存程序集里，JsonUtility 只认顶层字段：先截出某一段再解析成扁平类
+    static string Section(string j, string key)
     {
-        { "ButtonGreen", "TMP_Font_Normal 3ButtonGreen" }, { "ButtonBlue", "TMP_Font_Normal 3ButtonBlue" },
-        { "ButtonOrange", "TMP_Font_Normal 3ButtonOrange" }, { "ButtonRed", "TMP_Font_Normal 3ButtonRed" },
-        { "ButtonGray", "TMP_Font_Normal 3ButtonGray" }, { "Shadow Orange", "TMP_Font_Normal 3Shadow Orange" },
-        { "Shadow Blue", "TMP_Font_Normal 3Shadow Blue" }, { "Shadow Purple", "TMP_Font_Normal 3Shadow Purple" },
-        { "Shadow Red", "TMP_Font_Normal 3Shadow Red" },
-        { "Shadow", "TMP_Font_Normal OutLine Black" }, { "Describe", "TMP_Font_Normal OutLine Black" }, { "Title", "TMP_Font_Normal OutLine Black" },
-        { "Button", "" }, { "Shadow Small", "" }, { "Outline", "" }, { "Material", "" }, { "", "" },
-    };
+        if (j == null) return null;
+        int k = j.IndexOf("\"" + key + "\"", StringComparison.Ordinal); if (k < 0) return null;
+        int i = j.IndexOf('{', k); if (i < 0) return null;
+        int depth = 0; bool str = false;
+        for (int p = i; p < j.Length; p++)
+        {
+            char c = j[p];
+            if (str) { if (c == '\\') p++; else if (c == '"') str = false; continue; }
+            if (c == '"') str = true; else if (c == '{') depth++; else if (c == '}' && --depth == 0) return j.Substring(i, p - i + 1);
+        }
+        return null;
+    }
+    static string FactsJson()
+    {
+        var env = Environment.GetEnvironmentVariable("UIRESKIN_FACTS");
+        if (!string.IsNullOrEmpty(env) && System.IO.File.Exists(env)) return System.IO.File.ReadAllText(env);
+        var d = new System.IO.DirectoryInfo(System.IO.Path.GetDirectoryName(Application.dataPath));
+        for (int i = 0; d != null && i < 6; i++, d = d.Parent) { var p = System.IO.Path.Combine(d.FullName, ".uireskin", "facts.json"); if (System.IO.File.Exists(p)) return System.IO.File.ReadAllText(p); }
+        return null;
+    }
+    /// 读项目事实 localization 段；缺项返回说明（null = 齐全）
+    static string LoadFacts()
+    {
+        var json = FactsJson();
+        var sec = Section(json, "localization");
+        lf = JsonUtility.FromJson<LF>(sec ?? "{}") ?? new LF();
+        var miss = new List<string>();
+        if (string.IsNullOrEmpty(lf.component)) miss.Add("localization.component（本地化文字组件类名）");
+        if (lf.requiredFonts == null || lf.requiredFonts.Length == 0) miss.Add("localization.requiredFonts（挂该组件的文字必须用的字体）");
+        MatMap = new Dictionary<string, string>();
+        // materialMap 是对象数组，片段里 JsonUtility 读不了：用正则取 {"from": "...", "to": "..."}（两字段顺序不限）
+        if (sec != null)
+            foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(sec, @"\{[^{}]*\}"))
+            {
+                var f = System.Text.RegularExpressions.Regex.Match(m.Value, @"""from""\s*:\s*""([^""]*)"""); var t = System.Text.RegularExpressions.Regex.Match(m.Value, @"""to""\s*:\s*""([^""]*)""");
+                if (f.Success) MatMap[f.Groups[1].Value] = t.Success ? t.Groups[1].Value : "";
+            }
+        if (miss.Count == 0) return null;
+        return (json == null ? "没有项目事实 .uireskin/facts.json。" : "") + "项目事实缺：" + string.Join("、", miss) +
+               "。先调研（uir_project.py info 列本地化组件候选；读组件源码看它在哪些字体上做语言回退 / 切换）后写入；项目没有「本地化组件 + 规范字体」约束时本项不适用。";
+    }
+    static bool IsNormal(TMP_FontAsset f) => f != null && lf.requiredFonts.Contains(f.name);
+    static MonoBehaviour Loc(Component c) => c.GetComponents<MonoBehaviour>().FirstOrDefault(m => m != null && (m.GetType().Name == lf.component || m.GetType().FullName == lf.component));
+    static string LocId(MonoBehaviour m)
+    {
+        if (string.IsNullOrEmpty(lf.idField)) return "-";
+        var p = new SerializedObject(m).FindProperty(lf.idField);
+        return p == null ? "-" : p.propertyType == SerializedPropertyType.String ? p.stringValue : p.intValue.ToString();
+    }
+    static bool Unset(string id) => id == "0" || id == "" ;
     static string P(Transform t, Transform r) { var s = new List<string>(); while (t != null && t != r) { s.Add(t.name); t = t.parent; } s.Reverse(); return string.Join("/", s); }
-    static bool IsNormal(TMP_FontAsset f) => f != null && (f.name == "TMP_Font_Normal" || f.name == "TMP_Font_Normal_Title");
-    static MonoBehaviour Loc(Component c) => c.GetComponents<MonoBehaviour>().FirstOrDefault(m => m != null && m.GetType().Name == "LocalizationText");
-    static int LocId(MonoBehaviour m) => new SerializedObject(m).FindProperty("m_LocalizationID").intValue;
     static Dictionary<string, Transform> Map(GameObject g) { var d = new Dictionary<string, Transform>(); if (g) foreach (var t in g.GetComponentsInChildren<Transform>(true)) { var k = P(t, g.transform); if (!d.ContainsKey(k)) d[k] = t; } return d; }
     static string N(UnityEngine.Object o) => o ? o.name : "null";
     static T Exact<T>(string name, string type) where T : UnityEngine.Object
@@ -51,9 +90,10 @@ public class LocFontFix
 
     public static string Run()
     {
-        var normal = Exact<TMP_FontAsset>("TMP_Font_Normal", "TMP_FontAsset");
-        if (normal == null) return "工程里没有 TMP_Font_Normal 字体，本项不适用（按项目自己的字体规范处理）";
-        var title = Exact<TMP_FontAsset>("TMP_Font_Normal_Title", "TMP_FontAsset") ?? normal;
+        var need = LoadFacts(); if (need != null) return need;
+        var normal = Exact<TMP_FontAsset>(lf.requiredFonts[0], "TMP_FontAsset");
+        if (normal == null) return $"项目事实里的规范字体 {lf.requiredFonts[0]} 在工程里找不到，先核对事实";
+        var title = (string.IsNullOrEmpty(lf.titleFont) ? null : Exact<TMP_FontAsset>(lf.titleFont, "TMP_FontAsset")) ?? normal;
         var sb = new StringBuilder(); var cnt = new Dictionary<string, int>(); var missing = new HashSet<string>(); int skippedNested = 0;
         void Count(string k) => cnt[k] = cnt.TryGetValue(k, out var c) ? c + 1 : 1;
         foreach (var rel in AssetDatabase.FindAssets("t:Prefab", new[] { OLD.TrimEnd('/') }).Select(AssetDatabase.GUIDToAssetPath).Select(p => p.Substring(OLD.Length)).OrderBy(x => x))
@@ -72,11 +112,11 @@ public class LocFontFix
                     var np = P(tmp.transform, root.transform);
                     om.TryGetValue(np, out var ot); var otmp = ot ? ot.GetComponent<TextMeshProUGUI>() : null; var oloc = otmp ? Loc(otmp) : null;
                     bool nested = PrefabUtility.IsPartOfPrefabInstance(tmp);
-                    // 3) 动态文本误挂 LocalizationText(id=0)：删组件
-                    if (otmp != null && oloc == null && LocId(loc) == 0 && !IsNormal(tmp.font))
+                    // 3) 动态文本误挂本地化组件（id 未设置）：删组件
+                    if (otmp != null && oloc == null && Unset(LocId(loc)) && !IsNormal(tmp.font))
                     {
                         if (nested || PrefabUtility.IsPartOfPrefabInstance(loc)) { skippedNested++; continue; }   // 嵌套实例里的组件在源 prefab 里删
-                        Count("删误挂组件"); lines.Add($"| `{np}` | 0 | 删掉 LocalizationText（纯动态文本），字体保持 {N(tmp.font)} | 本轮新挂 |");
+                        Count("删误挂组件"); lines.Add($"| `{np}` | 0 | 删掉 {lf.component}（纯动态文本），字体保持 {N(tmp.font)} | 本轮新挂 |");
                         if (!DRY) { UnityEngine.Object.DestroyImmediate(loc, true); dirty = true; }
                         continue;
                     }
@@ -87,7 +127,7 @@ public class LocFontFix
                     am.TryGetValue(np, out var at); var src = (at ? at.GetComponent<TextMeshProUGUI>() : null) ?? tmp;
                     var mname = N(src.fontSharedMaterial); var fname = N(src.font);
                     var suffix = mname.StartsWith(fname) ? mname.Substring(fname.Length).Trim() : mname;
-                    var font = otmp != null && N(otmp.font) == "TMP_Font_Normal_Title" ? title : normal;
+                    var font = otmp != null && N(otmp.font) == title.name ? title : normal;
                     Material mat = null; string matDesc;
                     if (MatMap.TryGetValue(suffix, out var target) && target != "")
                     {
@@ -116,7 +156,7 @@ public class LocFontFix
         if (cnt.Count == 0) return "没有需要修复的节点（本轮零改动）" + (skippedNested > 0 ? $"；{skippedNested} 处在嵌套实例里，改源 prefab" : "");
         var head = $"## 字体修复记录（{(DRY ? "DRY 预演，未写入" : "已由程序修改")}）\n\n汇总：" + string.Join("，", cnt.Select(kv => kv.Key + " " + kv.Value)) + "\n";
         if (skippedNested > 0) head += $"\n嵌套实例里的 {skippedNested} 处跳过（在源 prefab 里改；源 prefab 不在本轮改动里时，把它加进 _TmpUIAuditOld 或单独改）；写入后重跑到零改动。\n";
-        if (missing.Count > 0) head += "\n缺对应预设、已用默认材质（效果会变，告知美术补 3<X> 预设或确认）：" + string.Join("、", missing) + "\n";
+        if (missing.Count > 0) head += "\n没有映射 / 预设不存在、已用默认材质（效果会变；确认后补进项目事实 materialMap 或请美术补预设）：" + string.Join("、", missing) + "\n";
         return head + sb;
     }
 }

@@ -12,13 +12,15 @@
 | Figma 节点 JSON | 同上（`figma_to_spec.py`；切图从 Figma 导出） |
 | 只有 PNG | 没有图层，生成不了骨架：参照工程里相近界面复制一个 prefab 改，或用 MCP 建节点；之后第 5 步起照常（对齐、资源、代码） |
 
-## 1. 摸清项目（每个项目第一次做，结论记进项目记忆）
+## 1. 摸清项目（先读项目事实；缺什么调研什么，核实后写回 `.uireskin/`）
 
+0. `python3 -I <skill>/scripts/uir_project.py facts show`：项目事实里 `ui`（参考分辨率、目录约定、效果图裁切）、`text`（默认字体）、`framework`（界面基类、绑定、注册、打开 / 关闭、参照界面）有的直接用，下面 1~5 步只做缺的部分，做完写回事实。
 1. `python3 -I <skill>/scripts/uir_project.py info`；没装编辑器工具就 `bash <skill>/scripts/install_unity_package.sh`。
 2. `execute_code`：`return UIReskin.ReskinSurvey.Run();` —— 界面基类分布与典型例子（含脚本路径）、绑定特性、打开 / 关闭界面的管理器方法、多语言组件、事件总线。`Run("Shop")` 按关键字找最像的参照界面。
 3. `return UIReskin.ReskinAssets.Survey();` —— 资源管理方式（Resources / Addressables / YooAsset）、图集数量与打包方式。
 4. 选**参照界面**：和新界面功能最像、基类相同的那个。读它的脚本、prefab 结构（根节点、遮罩、动画节点）、注册方式（类特性 / UI 配置表 / 枚举）、谁来打开它。后面每一步都照它做。
-5. UI 参考分辨率：根 Canvas 的 `CanvasScaler.referenceResolution`（第 2 步的 `--ref-width` 用）。
+5. UI 参考分辨率：根 Canvas 的 `CanvasScaler.referenceResolution`（`info` 里有排行，核对 UI 根节点）。
+6. 把 2~5 步核实的结论写进项目事实（`framework` 段：viewBase / bindingAttribute / bindingPathMember / descriptorAttribute / descriptorKeyMember / open / close / register / referenceViews；`ui` 段：refWidth / refHeight / prefabDir / spriteDir；`text.defaultFont`），facts.md 写证据。之后 `spec_to_layout.py` 的 `--ref-width` / `--frame`、生成器的字体和切图目录都自动取事实。
 
 ## 2. 解析源文件 → 骨架布局
 
@@ -83,7 +85,7 @@ UIReskin.ReskinAssets.EnsureLoadable(new[]{ "<prefab>" }, dryRun: true / false)
 ```
 
 - 图集：已被收录跳过；按清单打包的图集补图；都没有就按工程现有图集的设置新建（按文件夹打包，V1 / V2 跟工程）；工程完全不用图集不建。
-- 资源管理：Resources 下直接可用；Addressables 建条目（组跟同目录已有条目）；YooAsset 已被收集器覆盖就跳过，否则照抄路径最接近的收集器新建。**项目另有约定（如活动资源单独分组、按需下载标签、不进首包）以项目为准**，先读项目记忆 / 文档。
+- 资源管理：Resources 下直接可用；Addressables 建条目（组跟同目录已有条目）；YooAsset 已被收集器覆盖就跳过，否则照抄路径最接近的收集器新建。**项目另有约定（如活动资源单独分组、按需下载标签、不进首包）以项目为准**，先读项目事实 / 文档。
 - 改了资源配置要跑项目的资源 / 图集守卫测试。
 
 ## 7. 验证

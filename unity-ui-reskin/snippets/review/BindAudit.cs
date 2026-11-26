@@ -1,7 +1,15 @@
-// 用途：DragonCD3 UI 框架（View + [Binding] + [ViewDescriptor]）下所有界面的绑定路径与组件类型，新版 vs 旧版各跑一遍，只关心"新版才失败"的项（references/review.md §3 第 1 项）。
-// 前提：已用 scripts/export_snapshot.py 把旧版导到 Assets/_TmpUIAuditOld/。运行：funplay execute_code，整段粘贴；只读，可加 skip_refresh=true。
-// 输出：每个改动过的界面一行；[REGRESS] = 本轮新引入，[PRE] = 原来就有，[OLDONLY] = 本轮反而修好了。
+// 用途：界面代码里「按路径绑定节点」的新旧对比（references/review.md §3 第 1 项）：新版 prefab 才找不到的节点 / 组件 = 本轮改坏。
+// 框架信息全部来自项目事实 .uireskin/facts.json 的 framework 段（不内置任何框架）：
+//   viewBase             界面基类全名（例：MyGame.UI.ViewBase）
+//   bindingAttribute     字段 / 方法上的绑定特性全名
+//   bindingPathMember    特性上存节点路径的字段 / 属性名（或 "ctor:0" = 第 1 个构造参数）
+//   bindingOptionalMember  可空标记成员（可选）；bindingComponentMember  方法绑定时的组件类型成员（可选）
+//   descriptorAttribute + descriptorKeyMember  类上记录 prefab 名 / 路径的特性与成员
+// 事实里没有 → 返回需要调研的项（用 UIReskin.ReskinSurvey.Run() 找基类与绑定特性，读特性源码确认成员名后写入）。
+// 前提：scripts/export_snapshot.py 已把旧版导到 Assets/_TmpUIAuditOld/。只读，可加 skip_refresh=true。
+// 输出：[REGRESS] 本轮新引入，[PRE] 原来就有，[OLDONLY] 本轮反而修好了。
 using System;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Reflection;
@@ -12,29 +20,68 @@ using UnityEditor;
 public class BindAudit
 {
     const string OLD = "Assets/_TmpUIAuditOld/";
-    static Type viewT, bindT, descT;
+    [Serializable] public class FW { public string viewBase, bindingAttribute, bindingPathMember, bindingOptionalMember, bindingComponentMember, descriptorAttribute, descriptorKeyMember; }
+    static Type viewT, bindT, descT; static FW fw;
+
+    static string FactsJson()
+    {
+        var env = Environment.GetEnvironmentVariable("UIRESKIN_FACTS");
+        if (!string.IsNullOrEmpty(env) && File.Exists(env)) return File.ReadAllText(env);
+        var d = new DirectoryInfo(System.IO.Path.GetDirectoryName(Application.dataPath));
+        for (int i = 0; d != null && i < 6; i++, d = d.Parent) { var p = System.IO.Path.Combine(d.FullName, ".uireskin", "facts.json"); if (File.Exists(p)) return File.ReadAllText(p); }
+        return null;
+    }
+    // funplay 片段编译在内存程序集里，JsonUtility 只认顶层字段：先截出某一段再解析成扁平类
+    static string Section(string j, string key)
+    {
+        if (j == null) return null;
+        int k = j.IndexOf("\"" + key + "\"", StringComparison.Ordinal); if (k < 0) return null;
+        int i = j.IndexOf('{', k); if (i < 0) return null;
+        int depth = 0; bool str = false;
+        for (int p = i; p < j.Length; p++)
+        {
+            char c = j[p];
+            if (str) { if (c == '\\') p++; else if (c == '"') str = false; continue; }
+            if (c == '"') str = true; else if (c == '{') depth++; else if (c == '}' && --depth == 0) return j.Substring(i, p - i + 1);
+        }
+        return null;
+    }
+    static Type FindType(string n) { if (string.IsNullOrEmpty(n)) return null; foreach (var a in AppDomain.CurrentDomain.GetAssemblies()) { var t = a.GetType(n); if (t != null) return t; } return null; }
+    static object Member(object attr, Attribute raw, MemberInfo owner, string member)
+    {
+        if (string.IsNullOrEmpty(member) || attr == null) return null;
+        if (member.StartsWith("ctor:"))
+        {
+            int idx = int.Parse(member.Substring(5));
+            var data = owner.GetCustomAttributesData().FirstOrDefault(x => x.AttributeType == attr.GetType());
+            return data != null && idx < data.ConstructorArguments.Count ? data.ConstructorArguments[idx].Value : null;
+        }
+        var t = attr.GetType(); const BindingFlags F = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+        return t.GetField(member, F)?.GetValue(attr) ?? t.GetProperty(member, F)?.GetValue(attr);
+    }
 
     public static string Run()
     {
-        foreach (var a in AppDomain.CurrentDomain.GetAssemblies())
-        {
-            Type t;
-            if ((t = a.GetType("DragonCD3.UI.View")) != null) viewT = t;
-            if ((t = a.GetType("DragonCD3.UI.BindingAttribute")) != null) bindT = t;
-            if ((t = a.GetType("DragonCD3.UI.ViewDescriptorAttribute")) != null) descT = t;
-        }
-        if (viewT == null || bindT == null || descT == null) return "本项目没有 DragonCD3 UI 绑定体系（DragonCD3.UI.View / BindingAttribute / ViewDescriptorAttribute），本项不适用：改用 grep 代码里的 Find / GetComponent 路径 + HierDiff 的删除节点名";
+        var json = FactsJson();
+        fw = JsonUtility.FromJson<FW>(Section(json, "framework") ?? "{}") ?? new FW();
+        viewT = FindType(fw.viewBase); bindT = FindType(fw.bindingAttribute); descT = FindType(fw.descriptorAttribute);
+        var miss = new List<string>();
+        if (viewT == null) miss.Add("framework.viewBase"); if (bindT == null) miss.Add("framework.bindingAttribute");
+        if (string.IsNullOrEmpty(fw.bindingPathMember)) miss.Add("framework.bindingPathMember");
+        if (descT == null || string.IsNullOrEmpty(fw.descriptorKeyMember)) miss.Add("framework.descriptorAttribute / descriptorKeyMember");
+        if (miss.Count > 0) return (json == null ? "没有项目事实 .uireskin/facts.json。" : "") + "项目事实缺：" + string.Join("、", miss) +
+            "。先调研（UIReskin.ReskinSurvey.Run() 列出界面基类与绑定特性；读特性源码确认路径成员名）后写入事实再跑；项目不是「特性按路径绑定」的框架时，本项改为 grep 代码里的 Find / GetComponent 路径 + HierDiff 的删除节点名。";
         var olds = AssetDatabase.FindAssets("t:Prefab", new[] { OLD.TrimEnd('/') }).Select(AssetDatabase.GUIDToAssetPath).ToList();
         var all = AssetDatabase.FindAssets("t:Prefab", new[] { "Assets" }).Select(AssetDatabase.GUIDToAssetPath).Where(p => !p.StartsWith("Assets/_Tmp")).ToList();
         var outp = new StringBuilder($"旧版副本 {olds.Count} 个\n");
         foreach (var vt in TypeCache.GetTypesDerivedFrom(viewT).Where(t => !t.IsAbstract))
         {
             var desc = vt.GetCustomAttributes(descT, true).FirstOrDefault();
-            var key = desc == null ? null : descT.GetField("PrefabKey").GetValue(desc) as string;
+            var key = Member(desc, null, vt, fw.descriptorKeyMember) as string;
             if (string.IsNullOrEmpty(key)) continue;
-            // PrefabKey 有两种写法：文件名，或小写相对路径
+            // prefab 键可能是文件名，也可能是相对路径
             var newPath = key.Contains("/")
-                ? all.FirstOrDefault(p => p.ToLowerInvariant().EndsWith("/" + key.ToLowerInvariant()))
+                ? all.FirstOrDefault(p => p.ToLowerInvariant().EndsWith("/" + key.ToLowerInvariant().TrimStart('/')) || p.ToLowerInvariant().EndsWith("/" + key.ToLowerInvariant().TrimStart('/') + ".prefab"))
                 : all.FirstOrDefault(p => System.IO.Path.GetFileNameWithoutExtension(p) == key);
             if (newPath == null) continue;
             var rel = newPath.Substring("Assets/".Length);
@@ -54,29 +101,30 @@ public class BindAudit
     static void Check(Type vt, Transform root, string ctx, int depth, List<string> res)
     {
         if (depth > 6) return;
+        const BindingFlags F = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
         for (var t = vt; t != null && t != typeof(object); t = t.BaseType)
         {
-            foreach (var f in t.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly))
+            foreach (var f in t.GetFields(F))
             {
                 var b = f.GetCustomAttribute(bindT); if (b == null) continue;
-                var p = (string)bindT.GetField("Path").GetValue(b);
-                var cn = (bool)bindT.GetField("CanBeNull").GetValue(b) ? " (CanBeNull)" : "";
+                var p = Member(b, b, f, fw.bindingPathMember) as string;
+                var cn = Member(b, b, f, fw.bindingOptionalMember) is bool ob && ob ? " (可空)" : "";
                 var tr = string.IsNullOrEmpty(p) ? root : root.Find(p);
                 if (tr == null) { res.Add($"MISS {ctx}{t.Name}.{f.Name} '{p}'{cn}"); continue; }
                 var ft = f.FieldType;
-                if (ft == typeof(GameObject) || ft == typeof(Transform)) continue;
-                if (ft.IsSubclassOf(viewT)) { Check(ft, tr, ctx + ft.Name + "[" + p + "]>", depth + 1, res); continue; }
-                if (tr.GetComponent(ft) == null) res.Add($"NOCOMP {ctx}{t.Name}.{f.Name} '{p}' need {ft.Name}{cn}");
+                if (ft == typeof(GameObject) || ft == typeof(Transform) || ft == typeof(RectTransform)) continue;
+                if (viewT.IsAssignableFrom(ft)) { Check(ft, tr, ctx + ft.Name + "[" + p + "]>", depth + 1, res); continue; }
+                if (typeof(Component).IsAssignableFrom(ft) && tr.GetComponent(ft) == null) res.Add($"NOCOMP {ctx}{t.Name}.{f.Name} '{p}' need {ft.Name}{cn}");
             }
-            foreach (var m in t.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly))
+            foreach (var m in t.GetMethods(F))
             {
                 var b = m.GetCustomAttribute(bindT); if (b == null) continue;
-                var p = (string)bindT.GetField("Path").GetValue(b);
-                var ct = (Type)bindT.GetField("ComponentType").GetValue(b);
-                var cn = (bool)bindT.GetField("CanBeNull").GetValue(b) ? " (CanBeNull)" : "";
+                var p = Member(b, b, m, fw.bindingPathMember) as string;
+                var ct = Member(b, b, m, fw.bindingComponentMember) as Type;
+                var cn = Member(b, b, m, fw.bindingOptionalMember) is bool ob && ob ? " (可空)" : "";
                 var tr = string.IsNullOrEmpty(p) ? root : root.Find(p);
                 if (tr == null) { res.Add($"MISS {ctx}{t.Name}.{m.Name}() '{p}'{cn}"); continue; }
-                if (tr.GetComponent(ct) == null) res.Add($"NOCOMP {ctx}{t.Name}.{m.Name}() '{p}' need {ct.Name}{cn}");
+                if (ct != null && tr.GetComponent(ct) == null) res.Add($"NOCOMP {ctx}{t.Name}.{m.Name}() '{p}' need {ct.Name}{cn}");
             }
         }
     }
