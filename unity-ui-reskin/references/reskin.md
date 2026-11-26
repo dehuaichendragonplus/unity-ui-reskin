@@ -49,7 +49,7 @@
 | UI 参考分辨率 | 根 Canvas 的 `CanvasScaler`（referenceResolution、match）。参考宽 = 效果图宽时 1 画布单位 = 1 效果图 px；否则换算比 = 参考宽 / 效果图宽 |
 | 自管参考框 | 有些模块（玩法局内 UI）自己算缩放框，不走根 Canvas：grep `CanvasScaler`、`referenceResolution`、`scaleFactor` 找到规则，按它换算 |
 | 世界空间元素 | 棋盘等世界节点按正交相机换算：1 世界单位 = 屏幕高 px / (2 × orthographicSize)；原点 = 屏幕中心。玩法节点（生成点、地板、边界）不要为了对齐挪 |
-| 文字体系 | `ReskinConfig.Dump()`：有 `LocalizeTextMeshProUGUI` 一类组件 → 样式材质按语言目录克隆，必须同时换材质与样式字段；有 `LocalizationText` + 规范字体（如 `TMP_Font_Normal`）→ 这类文字的字体问题默认交美术（review.md §6.2）；纯 TMP → 直接改 TMP |
+| 文字体系 | `ReskinConfig.Dump()`：有 `LocalizeTextMeshProUGUI` 一类组件 → 样式材质按语言目录克隆，必须同时换材质与样式字段；有 `LocalizationText` + 规范字体（如 `TMP_Font_Normal`）→ 这类文字的字体问题由程序用 `LocFontFix.cs` 直接修（review.md §6.2）；纯 TMP → 直接改 TMP |
 | `execute_code` 里的 `Screen` | 读到的是编辑器其他视图尺寸，**不是 Game 视图**。换算用 `Camera.pixelWidth/pixelHeight`，或用 `ReskinMatrix`（在 Play 主循环协程里读 Screen） |
 
 ## 4. 流程

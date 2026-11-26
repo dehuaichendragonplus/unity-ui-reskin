@@ -1,4 +1,4 @@
-// 用途：修复后对比"美术版 vs 当前"每个字体有变化的 TMP 节点的效果类型（描边 / 阴影 / 发光），列出不一致项交美术确认（references/review.md §6.2、§6.3）。
+// 用途：修复后对比"美术版 vs 当前"每个字体有变化的 TMP 节点的效果类型（描边 / 阴影 / 发光），列出不一致项，由程序修到一致（缺预设的写进告知）（references/review.md §6.2、§6.3）。
 // 前提：Assets/_TmpUIAuditArt/ 已导出美术版。只读。
 using System;
 using System.Linq;
